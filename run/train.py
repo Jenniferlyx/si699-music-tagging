@@ -3,12 +3,15 @@ import argparse
 from models import *
 import yaml
 from torch.utils.tensorboard import SummaryWriter
+# python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
+import matplotlib.pyplot as plt
 import logging
+import multiprocessing
 logging.basicConfig(filename="log",
                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                     datefmt='%H:%M:%S',
+                    filemode='w',
                     level=logging.INFO)
-import multiprocessing
 sem = multiprocessing.Semaphore(1)
 sem.release()
 
@@ -64,6 +67,7 @@ def validate(model, epoch, criterion, val_loader):
 
 
 def accuracy(output, labels):
+    plt.hist(output.detach().numpy())
     classes = output
     classes[classes > 0.5] = 1
     classes[classes <= 0.5] = 0
@@ -71,7 +75,7 @@ def accuracy(output, labels):
 
 
 def save_to_onnx(model):
-    dummy_input = torch.randn(1, 96, 1000)
+    dummy_input = torch.randn(1, 96, 2880000)
     torch.onnx.export(model,
                       dummy_input,
                       "model/crnn.onnx",
@@ -90,7 +94,7 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
     n_classes = 50
-    model = CRNN(n_classes).to(device)
+    model = CRNN(n_classes, config).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")

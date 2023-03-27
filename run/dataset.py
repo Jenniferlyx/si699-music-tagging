@@ -39,9 +39,10 @@ class MyDataset(torch.utils.data.Dataset):
         self.type = type
         # transform waveform into spectrogram
         self.prepare_data()
+        self.length = self.data[0].shape[0]
         # make sure all of the data has the same dimension
-        self.length = int(
-            (10 * self.config['sample_rate'] + self.config['hop_length'] - 1) // self.config['hop_length'])
+        # self.length = int(
+        #     (10 * self.config['sample_rate'] + self.config['hop_length'] - 1) // self.config['hop_length'])
 
         print('Dataset will yield mel spectrogram {} data samples in shape (1, {}, {})'.format(len(self.data),
                                                                                                self.config['n_mels'],
@@ -61,16 +62,16 @@ class MyDataset(torch.utils.data.Dataset):
         assert 0 <= index < len(self)
         mel_spec = self.data[index]
         # Padding if sample is shorter than expected - both head & tail are filled with 0s
-        pad_size = self.length - mel_spec.shape[-1]
-        if pad_size > 0:
-            offset = pad_size // 2
-            mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
-
-        # Random crop
-        crop_size = mel_spec.shape[-1] - self.length
-        if crop_size > 0:
-            start = np.random.randint(0, crop_size)
-            mel_spec = mel_spec[..., start:start + self.length]
+        # pad_size = self.length - mel_spec.shape[-1]
+        # if pad_size > 0:
+        #     offset = pad_size // 2
+        #     mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
+        #
+        # # Random crop
+        # crop_size = mel_spec.shape[-1] - self.length
+        # if crop_size > 0:
+        #     start = np.random.randint(0, crop_size)
+        #     mel_spec = mel_spec[..., start:start + self.length]
         # # Apply augmentations
         # if self.transforms is not None:
         #     log_mel_spec = self.transforms(log_mel_spec)
@@ -93,8 +94,8 @@ class MyDataset(torch.utils.data.Dataset):
         whole_filenames = []
         for id in tracks:
             whole_filenames.append(os.path.join(self.npy_root, id))
-        train_size = int(len(whole_filenames) * 0.7)
-        val_size = int(len(whole_filenames) * 0.2)
+        train_size = int(len(whole_filenames) * 0.1)
+        val_size = int(len(whole_filenames) * 0.02)
         filenames = []
         random.shuffle(whole_filenames)
         if self.type == 'train':
@@ -105,13 +106,13 @@ class MyDataset(torch.utils.data.Dataset):
             filenames = whole_filenames[(train_size+val_size):]
         for filename in tqdm(filenames):
             waveform = np.load(filename)
-            mel = librosa.feature.melspectrogram(y=waveform,
-                                                 sr=self.config['sample_rate'],
-                                                 n_fft=self.config['n_fft'],
-                                                 hop_length=self.config['hop_length'],
-                                                 n_mels=self.config['n_mels'],
-                                                 fmin=self.config['fmin'],
-                                                 fmax=self.config['fmax'])
-            self.data.append(librosa.power_to_db(mel, ref=np.max))
+            # mel = librosa.feature.melspectrogram(y=waveform,
+            #                                      sr=self.config['sample_rate'],
+            #                                      n_fft=self.config['n_fft'],
+            #                                      hop_length=self.config['hop_length'],
+            #                                      n_mels=self.config['n_mels'],
+            #                                      fmin=self.config['fmin'],
+            #                                      fmax=self.config['fmax'])
+            self.data.append(waveform)
             id = os.path.join(filename.split('/')[-2], filename.split('/')[-1])
             self.labels.append(np.sum(self.mlb.transform(tracks[id]), axis=0))
