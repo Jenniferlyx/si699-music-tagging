@@ -2,16 +2,27 @@ from dataset import *
 import argparse
 from models import *
 import yaml
+from torch.utils.tensorboard import SummaryWriter
+import logging
+logging.basicConfig(filename="log",
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.INFO)
+import multiprocessing
+sem = multiprocessing.Semaphore(1)
+sem.release()
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--tag_file', type=str, default='../data/npy/autotagging_top50tags.tsv')
-parser.add_argument('--npy_root', type=str, default='../data/npy')
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--tag_file', type=str, default='data/autotagging_top50tags.tsv')
+parser.add_argument('--npy_root', type=str, default='data/npy')
+parser.add_argument('--batch_size', type=int, default=4)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--num_epochs', type=int, default=20)
 args = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(device)
+writer = SummaryWriter()
+print("Run on:", device)
+
 
 def train(model, epoch, criterion, optimizer, train_loader):
     accs, losses = [], []
@@ -28,8 +39,11 @@ def train(model, epoch, criterion, optimizer, train_loader):
         losses.append(loss)
         acc = accuracy(output, label)
         accs.append(acc)
-    print("Train - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
+    logging.info("Train - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
+    writer.add_scalar("Loss/train", sum(losses) / len(losses), epoch)
+    writer.add_scalar("Acc/train", sum(accs) / len(accs))
     return model
+
 
 @torch.no_grad()
 def validate(model, epoch, criterion, val_loader):
@@ -44,7 +58,10 @@ def validate(model, epoch, criterion, val_loader):
         losses.append(loss)
         acc = accuracy(output, label)
         accs.append(acc)
-    print("Validate - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
+    logging.info("Validate - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
+    writer.add_scalar("Loss/val", sum(losses) / len(losses), epoch)
+    writer.add_scalar("Acc/val", sum(accs) / len(accs))
+
 
 def accuracy(output, labels):
     classes = output
@@ -52,19 +69,21 @@ def accuracy(output, labels):
     classes[classes <= 0.5] = 0
     return (classes == labels).sum() / len(classes.reshape(-1))
 
+
 def save_to_onnx(model):
     dummy_input = torch.randn(1, 96, 1000)
     torch.onnx.export(model,
                       dummy_input,
-                      "../model/crnn.onnx",
+                      "model/crnn.onnx",
                       export_params=True,  # store the trained parameter weights inside the model file
                       opset_version=11  # the ONNX version to export the model to
                       )
 
 
 if __name__ == '__main__':
-    with open('config.yaml', 'r') as f:
+    with open('run/config.yaml', 'r') as f:
         config = yaml.safe_load(f)
+    logging.info("Preparing dataset...")
     train_dataset = MyDataset(args.tag_file, args.npy_root, config, "train")
     val_dataset = MyDataset(args.tag_file, args.npy_root, config, "valid")
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
@@ -74,8 +93,10 @@ if __name__ == '__main__':
     model = CRNN(n_classes).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    logging.info("Training and validating model...")
     for epoch in tqdm(range(args.num_epochs)):
         train(model, epoch, criterion, optimizer, train_loader)
         validate(model, epoch, criterion, val_loader)
 
     save_to_onnx(model)
+    writer.close()
