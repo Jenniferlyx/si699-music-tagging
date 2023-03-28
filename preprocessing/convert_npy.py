@@ -15,7 +15,7 @@ with open('run/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 np.random.seed(0)
 
-def get_waveform(file, desired_length):
+def get_waveform(file, desired_length, npy_file):
     x, _ = librosa.load(file, sr=config['sample_rate'], mono=True, duration=args.duration)
     # Pad the waveform array with zeros if it is shorter than the desired length
     if len(x) < desired_length:
@@ -41,4 +41,4 @@ if __name__ == '__main__':
         if os.path.exists(npy_file) and args.override:
             os.remove(npy_file)
         if not os.path.exists(npy_file):
-            get_waveform(file, desired_length)
+            get_waveform(file, desired_length, npy_file)
