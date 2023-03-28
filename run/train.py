@@ -18,11 +18,11 @@ sem.release()
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--tag_file', type=str, default='data/autotagging_top50tags.tsv')
 parser.add_argument('--npy_root', type=str, default='data/npy')
-parser.add_argument('--batch_size', type=int, default=4)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--num_epochs', type=int, default=20)
 args = parser.parse_args()
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 writer = SummaryWriter()
 print("Run on:", device)
 
@@ -68,6 +68,8 @@ def validate(model, epoch, criterion, val_loader):
 
 def accuracy(output, labels):
     plt.hist(output.detach().numpy())
+    plt.savefig('dist.png')
+    plt.close()
     classes = output
     classes[classes > 0.5] = 1
     classes[classes <= 0.5] = 0
@@ -75,7 +77,7 @@ def accuracy(output, labels):
 
 
 def save_to_onnx(model):
-    dummy_input = torch.randn(1, 96, 2880000)
+    dummy_input = torch.randn(1, 96, 960000)
     torch.onnx.export(model,
                       dummy_input,
                       "model/crnn.onnx",
@@ -94,7 +96,7 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
     n_classes = 50
-    model = CRNN(n_classes, config).to(device)
+    model = Musicnn(n_classes, config).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")

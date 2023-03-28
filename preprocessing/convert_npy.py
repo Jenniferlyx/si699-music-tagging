@@ -5,7 +5,6 @@ import glob
 import os
 import numpy as np
 import yaml
-
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--data_path', type=str, default='data/raw_data')
 parser.add_argument('--output_root', type=str, default='data/npy')
@@ -14,15 +13,16 @@ parser.add_argument('--duration', type=int, default=120, help="Set the fixed dur
 args = parser.parse_args()
 with open('run/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
+np.random.seed(0)
 
 def get_waveform(file, desired_length):
-    x, _ = librosa.load(file, sr=config['sample_rate'], mono=True, offset=0.0, duration=desired_length)
+    x, _ = librosa.load(file, sr=config['sample_rate'], mono=True, duration=args.duration)
     # Pad the waveform array with zeros if it is shorter than the desired length
     if len(x) < desired_length:
         x = np.pad(x, (0, desired_length - len(x)), mode='constant')
     # Truncate the waveform array if it is longer than the desired length
     if len(x) > desired_length:
-        x = x[:desired_length]
+        x = np.random.choice(x, desired_length)
     assert len(x) == desired_length, "{} vs {}".format(len(x), desired_length)
     with open(npy_file, 'wb') as f:
         np.save(f, x)
