@@ -94,8 +94,8 @@ class MyDataset(torch.utils.data.Dataset):
         whole_filenames = []
         for id in tracks:
             whole_filenames.append(os.path.join(self.npy_root, id))
-        train_size = int(len(whole_filenames) * 0.1)
-        val_size = int(len(whole_filenames) * 0.02)
+        train_size = int(len(whole_filenames) * 0.5)
+        val_size = int(len(whole_filenames) * 0.1)
         filenames = []
         random.shuffle(whole_filenames)
         if self.type == 'train':

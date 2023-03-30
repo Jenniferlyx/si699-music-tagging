@@ -209,7 +209,7 @@ class FCN(nn.Module):
         self.layer5 = Conv_2d(128, 64, pooling=(4,4))
 
         # Dense
-        self.dense = nn.Linear(128, num_classes)
+        self.dense = nn.Linear(192, num_classes)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):

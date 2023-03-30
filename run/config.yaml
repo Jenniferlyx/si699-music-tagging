@@ -1,5 +1,5 @@
 sample_rate: 16000
-hop_length: 160
+hop_length: 40
 n_fft: 512
 n_mels: 96
 fmin: 0

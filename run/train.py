@@ -83,7 +83,7 @@ def accuracy(output, labels):
 
 
 def save_to_onnx(model):
-    dummy_input = torch.randn(4, 96, 6001)
+    dummy_input = torch.randn(4, 96, 4000)
     torch.onnx.export(model,
                       dummy_input,
                       "model/fcn.onnx",
