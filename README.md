@@ -36,8 +36,7 @@ to download `.mp3` files from `raw_30s` to directories under `data/raw_data`.
 ```
 python preprocessing/convert_npy.py --data_path data/raw_data \
                                     --output_root data/npy \
-                                    --override True \
-                                    --duration 60
+                                    --override True
 ```
 to convert audio files into `.npy` files under the directory `data/npy`.
 
@@ -50,6 +49,8 @@ python run/train.py --tag_file data/autotagging_top50tags.tsv \
                     --learning_rate 1e-4 \
                     --num_epochs 10 \
 ```
+
+The waveform will be transformed to melspectrogram with the parameters specified in `run/config.yaml`. The input of the model should be melspectrograms.
 
 The script will create a tensorboard monitor under `runs`. To activate tensorboard, run:
 ```
