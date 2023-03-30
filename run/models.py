@@ -125,11 +125,6 @@ class Musicnn(nn.Module):
         super(Musicnn, self).__init__()
 
         # Spectrogram
-        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
-                                                            n_fft=config['n_fft'],
-                                                            f_min=config['fmin'],
-                                                            f_max=config['fmax'],
-                                                            n_mels=config['n_mels'])
         self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
@@ -157,7 +152,7 @@ class Musicnn(nn.Module):
 
     def forward(self, x):
         # Spectrogram
-        x = self.spec(x)
+        # x = self.spec(x)
         x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
@@ -194,15 +189,15 @@ class FCN(nn.Module):
     Automatic tagging using deep convolutional neural networks.
     Fully convolutional network.
     '''
-    def __init__(self, num_classes, config):
+    def __init__(self, num_classes):
         super(FCN, self).__init__()
 
         # Spectrogram
-        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
-                                                            n_fft=config['n_fft'],
-                                                            f_min=config['fmin'],
-                                                            f_max=config['fmax'],
-                                                            n_mels=config['n_mels'])
+        # self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+        #                                                     n_fft=config['n_fft'],
+        #                                                     f_min=config['fmin'],
+        #                                                     f_max=config['fmax'],
+        #                                                     n_mels=config['n_mels'])
         self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
@@ -214,12 +209,13 @@ class FCN(nn.Module):
         self.layer5 = Conv_2d(128, 64, pooling=(4,4))
 
         # Dense
-        self.dense = nn.Linear(64, num_classes)
+        self.dense = nn.Linear(128, num_classes)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
         # Spectrogram
-        x = self.spec(x)
+        # print(x.shape)
+        # x = self.spec(x)
         x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)

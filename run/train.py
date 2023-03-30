@@ -20,7 +20,7 @@ parser.add_argument('--tag_file', type=str, default='data/autotagging_top50tags.
 parser.add_argument('--npy_root', type=str, default='data/npy')
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
-parser.add_argument('--num_epochs', type=int, default=20)
+parser.add_argument('--num_epochs', type=int, default=5)
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 writer = SummaryWriter()
@@ -30,7 +30,7 @@ print("Run on:", device)
 def train(model, epoch, criterion, optimizer, train_loader):
     accs, losses = [], []
     model.train()
-    for _, (input, label) in enumerate(train_loader):
+    for input, label in tqdm(train_loader):
         input, label = input.to(device), label.to(device)
         # input = input.unsqueeze(1)
         output = model(input)
@@ -52,7 +52,7 @@ def train(model, epoch, criterion, optimizer, train_loader):
 def validate(model, epoch, criterion, val_loader):
     losses, accs = [], []
     model.eval()
-    for _, (input, label) in enumerate(val_loader):
+    for input, label in tqdm(val_loader):
         input, label = input.to(device), label.to(device)
         # input = input.unsqueeze(1)
         output = model(input)
@@ -67,22 +67,27 @@ def validate(model, epoch, criterion, val_loader):
 
 
 def accuracy(output, labels):
-    plt.hist(output.detach().numpy())
-    plt.savefig('dist.png')
-    plt.close()
-    classes = output
-    classes[classes > 0.5] = 1
-    classes[classes <= 0.5] = 0
-    return (classes == labels).sum() / len(classes.reshape(-1))
+    assert output.shape == labels.shape
+    classes = []
+    for i in range(labels.size(0)):
+        label = labels[i]
+        k = label.sum()
+        _, idx = output[i].topk(k=k)
+        predict = torch.zeros_like(output[i])
+        predict[idx] = 1
+        classes.append(predict)
+    classes = torch.stack(classes)    
+    matched_1s = torch.mul(classes, labels)
+    # return (classes == labels).sum() / len(classes.reshape(-1))
+    return matched_1s.sum() / labels.sum()
 
 
 def save_to_onnx(model):
-    dummy_input = torch.randn(1, 96, 960000)
+    dummy_input = torch.randn(4, 96, 6001)
     torch.onnx.export(model,
                       dummy_input,
-                      "model/crnn.onnx",
-                      export_params=True,  # store the trained parameter weights inside the model file
-                      opset_version=11  # the ONNX version to export the model to
+                      "model/fcn.onnx",
+                      export_params=True
                       )
 
 
@@ -96,7 +101,7 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
     n_classes = 50
-    model = Musicnn(n_classes, config).to(device)
+    model = FCN(n_classes).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")

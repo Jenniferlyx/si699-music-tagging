@@ -1,14 +1,14 @@
 import csv
 import os
 import random
-
+import platform
 import torch
 import librosa
 from tqdm import tqdm
 import numpy as np
 import glob
 from sklearn.preprocessing import LabelBinarizer
-
+import torchaudio
 random.seed(42)
 
 TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---synthesizer',
@@ -39,10 +39,10 @@ class MyDataset(torch.utils.data.Dataset):
         self.type = type
         # transform waveform into spectrogram
         self.prepare_data()
-        self.length = self.data[0].shape[0]
+        # self.length = self.data[0].shape[0]
         # make sure all of the data has the same dimension
-        # self.length = int(
-        #     (10 * self.config['sample_rate'] + self.config['hop_length'] - 1) // self.config['hop_length'])
+        self.length = int(
+            (10 * self.config['sample_rate'] + self.config['hop_length'] - 1) // self.config['hop_length'])
 
         print('Dataset will yield mel spectrogram {} data samples in shape (1, {}, {})'.format(len(self.data),
                                                                                                self.config['n_mels'],
@@ -62,16 +62,16 @@ class MyDataset(torch.utils.data.Dataset):
         assert 0 <= index < len(self)
         mel_spec = self.data[index]
         # Padding if sample is shorter than expected - both head & tail are filled with 0s
-        # pad_size = self.length - mel_spec.shape[-1]
-        # if pad_size > 0:
-        #     offset = pad_size // 2
-        #     mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
-        #
-        # # Random crop
-        # crop_size = mel_spec.shape[-1] - self.length
-        # if crop_size > 0:
-        #     start = np.random.randint(0, crop_size)
-        #     mel_spec = mel_spec[..., start:start + self.length]
+        pad_size = self.length - mel_spec.shape[-1]
+        if pad_size > 0:
+            offset = pad_size // 2
+            mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
+        
+        # Random crop
+        crop_size = mel_spec.shape[-1] - self.length
+        if crop_size > 0:
+            start = np.random.randint(0, crop_size)
+            mel_spec = mel_spec[..., start:start + self.length]
         # # Apply augmentations
         # if self.transforms is not None:
         #     log_mel_spec = self.transforms(log_mel_spec)
@@ -106,13 +106,19 @@ class MyDataset(torch.utils.data.Dataset):
             filenames = whole_filenames[(train_size+val_size):]
         for filename in tqdm(filenames):
             waveform = np.load(filename)
-            # mel = librosa.feature.melspectrogram(y=waveform,
-            #                                      sr=self.config['sample_rate'],
-            #                                      n_fft=self.config['n_fft'],
-            #                                      hop_length=self.config['hop_length'],
-            #                                      n_mels=self.config['n_mels'],
-            #                                      fmin=self.config['fmin'],
-            #                                      fmax=self.config['fmax'])
-            self.data.append(waveform)
+            mel = librosa.feature.melspectrogram(y=waveform,
+                                                 sr=self.config['sample_rate'],
+                                                 n_fft=self.config['n_fft'],
+                                                 hop_length=self.config['hop_length'],
+                                                 n_mels=self.config['n_mels'],
+                                                 fmin=self.config['fmin'],
+                                                 fmax=self.config['fmax'])
+            # mel = torchaudio.transforms.MelSpectrogram(waveform,
+            #                                            sample_rate=self.config['sample_rate'],
+            #                                            n_fft=self.config['n_fft'],
+            #                                            f_min=self.config['fmin'],
+            #                                            f_max=self.config['fmax'],
+            #                                            n_mels=self.config['n_mels'])
+            self.data.append(mel)
             id = os.path.join(filename.split('/')[-2], filename.split('/')[-1])
             self.labels.append(np.sum(self.mlb.transform(tracks[id]), axis=0))
