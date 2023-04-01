@@ -14,7 +14,7 @@ parser.add_argument('--override', type=bool, default=False,
 # parser.add_argument('--duration', type=int, default=120,
 #                     help="Set the fixed duration in seconds to cut the audio length")
 args = parser.parse_args()
-with open('run/config.yaml', 'r') as f:
+with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 np.random.seed(0)
 

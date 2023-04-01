@@ -64,13 +64,13 @@ class CRNN(nn.Module):
     Convolution recurrent neural networks for music classification.
     Feature extraction with CNN + temporal summary with RNN
     '''
-    def __init__(self, num_classes, config):
+    def __init__(self, num_classes, config=None):
         super(CRNN, self).__init__()
-        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
-                                                         n_fft=config['n_fft'],
-                                                         f_min=config['fmin'],
-                                                         f_max=config['fmax'],
-                                                         n_mels=config['n_mels'])
+        # self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+        #                                                  n_fft=config['n_fft'],
+        #                                                  f_min=config['fmin'],
+        #                                                  f_max=config['fmax'],
+        #                                                  n_mels=config['n_mels'])
         self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
@@ -89,7 +89,7 @@ class CRNN(nn.Module):
 
     def forward(self, x):
         # Spectrogram
-        x = self.spec(x)
+        # x = self.spec(x)
         x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
@@ -234,3 +234,120 @@ class FCN(nn.Module):
         x = nn.Sigmoid()(x)
 
         return x
+
+
+class SampleCNN(nn.Module):
+    def __init__(self, n_classes, config):
+        super(SampleCNN, self).__init__()
+
+        # 59049 x 1
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(config['n_mels'], 128, kernel_size=3, stride=1, padding=0),
+            nn.BatchNorm1d(128),
+            nn.ReLU())
+        # 19683 x 128
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(128, 128, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 6561 x 128
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(128, 128, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 2187 x 128
+        self.conv4 = nn.Sequential(
+            nn.Conv1d(128, 256, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 729 x 256
+        self.conv5 = nn.Sequential(
+            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 243 x 256
+        self.conv6 = nn.Sequential(
+            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2),
+            nn.Dropout(0.5))
+        # 81 x 256
+        self.conv7 = nn.Sequential(
+            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 27 x 256
+        self.conv8 = nn.Sequential(
+            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(2, stride=2))
+        # 9 x 256
+        self.conv9 = nn.Sequential(
+            nn.Conv1d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.MaxPool1d(3, stride=3))
+        # 3 x 256
+        self.conv10 = nn.Sequential(
+            nn.Conv1d(256, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.MaxPool1d(3, stride=3))
+        # 1 x 512
+        self.conv11 = nn.Sequential(
+            nn.Conv1d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.5))
+        # 1 x 512
+        self.fc1 = nn.Linear(4096, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, n_classes)
+        self.activation = nn.Sigmoid()
+
+    def forward(self, x):
+        # input x : 23 x 59049 x 1
+        # expected conv1d input : minibatch_size x num_channel x width
+
+        # x = x.view(x.shape[0], 1, -1)
+        # x : 23 x 1 x 59049
+        # print(x.shape)
+
+        out = self.conv1(x)
+        # print(out.shape)
+        out = self.conv2(out)
+        #print(out.shape)
+        out = self.conv3(out)
+        #print(out.shape)
+        out = self.conv4(out)
+        #print(out.shape)
+        out = self.conv5(out)
+        #print(out.shape)
+        out = self.conv6(out)
+        #print(out.shape)
+        out = self.conv7(out)
+        #print(out.shape)
+        out = self.conv8(out)
+        #print(out.shape)
+        out = self.conv9(out)
+        #print(out.shape)
+        out = self.conv10(out)
+        #print(out.shape)
+        out = self.conv11(out)
+        #print(out.shape)
+        out = out.view(x.shape[0], out.size(1) * out.size(2))
+        #print(out.shape)
+        out = self.fc1(out)
+        out = self.fc2(out)
+        logit = self.fc3(out)
+
+        logit = self.activation(logit)
+
+        return logit

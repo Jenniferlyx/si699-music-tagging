@@ -26,6 +26,19 @@ TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---sy
         'mood/theme---energetic', 'mood/theme---happy', 'mood/theme---emotional', 'mood/theme---film',
         'mood/theme---relaxing']
 
+def clip(mel, length):
+    # Padding if sample is shorter than expected - both head & tail are filled with 0s
+    pad_size = length - mel.shape[-1]
+    if pad_size > 0:
+        offset = pad_size // 2
+        mel = np.pad(mel, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
+
+    # Random crop
+    crop_size = mel.shape[-1] - length
+    if crop_size > 0:
+        start = np.random.randint(0, crop_size)
+        mel = mel[..., start:start + length]
+    return mel
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, tag_file, npy_root, config, type):
@@ -61,17 +74,7 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         assert 0 <= index < len(self)
         mel_spec = self.data[index]
-        # Padding if sample is shorter than expected - both head & tail are filled with 0s
-        pad_size = self.length - mel_spec.shape[-1]
-        if pad_size > 0:
-            offset = pad_size // 2
-            mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
-        
-        # Random crop
-        crop_size = mel_spec.shape[-1] - self.length
-        if crop_size > 0:
-            start = np.random.randint(0, crop_size)
-            mel_spec = mel_spec[..., start:start + self.length]
+        mel_spec = clip(mel_spec, self.length)
         # # Apply augmentations
         # if self.transforms is not None:
         #     log_mel_spec = self.transforms(log_mel_spec)
@@ -94,8 +97,8 @@ class MyDataset(torch.utils.data.Dataset):
         whole_filenames = []
         for id in tracks:
             whole_filenames.append(os.path.join(self.npy_root, id))
-        train_size = int(len(whole_filenames) * 0.5)
-        val_size = int(len(whole_filenames) * 0.1)
+        train_size = int(len(whole_filenames) * 0.1)
+        val_size = int(len(whole_filenames) * 0.01)
         filenames = []
         random.shuffle(whole_filenames)
         if self.type == 'train':

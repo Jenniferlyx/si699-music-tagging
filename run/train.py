@@ -83,16 +83,17 @@ def accuracy(output, labels):
 
 
 def save_to_onnx(model):
-    dummy_input = torch.randn(4, 96, 4000)
+    dummy_input = torch.randn(1, 96, 4000)
     torch.onnx.export(model,
                       dummy_input,
                       "model/fcn.onnx",
-                      export_params=True
+                      export_params=True,
+                      opset_version=15
                       )
 
 
 if __name__ == '__main__':
-    with open('run/config.yaml', 'r') as f:
+    with open('config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     logging.info("Preparing dataset...")
     train_dataset = MyDataset(args.tag_file, args.npy_root, config, "train")
@@ -101,7 +102,7 @@ if __name__ == '__main__':
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
     n_classes = 50
-    model = FCN(n_classes).to(device)
+    model = SampleCNN(n_classes, config).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")
@@ -109,5 +110,7 @@ if __name__ == '__main__':
         train(model, epoch, criterion, optimizer, train_loader)
         validate(model, epoch, criterion, val_loader)
 
-    save_to_onnx(model)
+    # torch.save(model.state_dict(), 'model/fcn.pt')
+    torch.save(model, 'model/samplecnn.pt')
+    # save_to_onnx(model)
     writer.close()
