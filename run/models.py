@@ -5,23 +5,23 @@ import torch.nn.functional as F
 import torchaudio
 
 class Conv_1d(nn.Module):
-    def __init__(self, input_channels, output_channels, shape=3, stride=1, pooling=2):
+    def __init__(self, input_channels, output_channels, kernel_size, stride, padding):
         super(Conv_1d, self).__init__()
-        self.conv = nn.Conv1d(input_channels, output_channels, shape, stride=stride, padding=shape//2)
+        self.conv = nn.Conv1d(input_channels, output_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm1d(output_channels)
         self.relu = nn.ReLU()
-        self.mp = nn.MaxPool1d(pooling)
+        self.mp = nn.MaxPool1d(kernel_size, stride=2)
     def forward(self, x):
         out = self.mp(self.relu(self.bn(self.conv(x))))
         return out
 
 class Conv_2d(nn.Module):
-    def __init__(self, input_channels, output_channels, shape=3, stride=1, pooling=2):
+    def __init__(self, input_channels, output_channels, kernel_size, stride, padding):
         super(Conv_2d, self).__init__()
-        self.conv = nn.Conv2d(input_channels, output_channels, shape, stride=stride, padding=shape//2)
+        self.conv = nn.Conv2d(input_channels, output_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm2d(output_channels)
         self.relu = nn.ReLU()
-        self.mp = nn.MaxPool2d(pooling)
+        self.mp = nn.MaxPool2d(kernel_size, stride)
     def forward(self, x):
         out = self.mp(self.relu(self.bn(self.conv(x))))
         return out
@@ -71,26 +71,26 @@ class CRNN(nn.Module):
         #                                                  f_min=config['fmin'],
         #                                                  f_max=config['fmax'],
         #                                                  n_mels=config['n_mels'])
-        self.to_db = torchaudio.transforms.AmplitudeToDB()
+        # self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # CNN
-        self.layer1 = Conv_2d(1, 64, pooling=(2,2))
-        self.layer2 = Conv_2d(64, 128, pooling=(3,3))
-        self.layer3 = Conv_2d(128, 128, pooling=(4,4))
-        self.layer4 = Conv_2d(128, 128, pooling=(4,4))
+        self.layer1 = Conv_2d(1, 64, kernel_size=2, stride=2, padding=2)
+        self.layer2 = Conv_2d(64, 128, kernel_size=2, stride=2, padding=2)
+        self.layer3 = Conv_2d(128, 128, kernel_size=2, stride=2, padding=2)
+        self.layer4 = Conv_2d(128, 128, kernel_size=2, stride=2, padding=2)
 
         # RNN
-        self.layer5 = nn.GRU(128, 32, 2, batch_first=True)
+        self.layer5 = nn.GRU(128, 64, 2, batch_first=True)
 
         # Dense
         self.dropout = nn.Dropout(0.5)
-        self.dense = nn.Linear(32, num_classes)
+        self.dense = nn.Linear(64, num_classes)
 
     def forward(self, x):
         # Spectrogram
         # x = self.spec(x)
-        x = self.to_db(x)
+        # x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
@@ -125,7 +125,7 @@ class Musicnn(nn.Module):
         super(Musicnn, self).__init__()
 
         # Spectrogram
-        self.to_db = torchaudio.transforms.AmplitudeToDB()
+        # self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # Pons front-end
@@ -153,7 +153,7 @@ class Musicnn(nn.Module):
     def forward(self, x):
         # Spectrogram
         # x = self.spec(x)
-        x = self.to_db(x)
+        # x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
@@ -237,117 +237,69 @@ class FCN(nn.Module):
 
 
 class SampleCNN(nn.Module):
-    def __init__(self, n_classes, config):
+    def __init__(self, n_classes, config=None):
         super(SampleCNN, self).__init__()
-
-        # 59049 x 1
+        # self.to_db = torchaudio.transforms.AmplitudeToDB()
+        # 128 x 10240
         self.conv1 = nn.Sequential(
-            nn.Conv1d(config['n_mels'], 128, kernel_size=3, stride=1, padding=0),
+            nn.Conv1d(config['n_mels'], 128, kernel_size=5, stride=2, padding=2),
             nn.BatchNorm1d(128),
             nn.ReLU())
-        # 19683 x 128
-        self.conv2 = nn.Sequential(
-            nn.Conv1d(128, 128, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 6561 x 128
-        self.conv3 = nn.Sequential(
-            nn.Conv1d(128, 128, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 2187 x 128
-        self.conv4 = nn.Sequential(
-            nn.Conv1d(128, 256, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 729 x 256
-        self.conv5 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 243 x 256
-        self.conv6 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2),
-            nn.Dropout(0.5))
-        # 81 x 256
-        self.conv7 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 27 x 256
-        self.conv8 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=2, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(2, stride=2))
-        # 9 x 256
-        self.conv9 = nn.Sequential(
-            nn.Conv1d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.MaxPool1d(3, stride=3))
-        # 3 x 256
-        self.conv10 = nn.Sequential(
-            nn.Conv1d(256, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.MaxPool1d(3, stride=3))
-        # 1 x 512
-        self.conv11 = nn.Sequential(
-            nn.Conv1d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(0.5))
-        # 1 x 512
-        self.fc1 = nn.Linear(4096, 1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc3 = nn.Linear(512, n_classes)
+        # 128 x 5120
+        self.conv2 = Conv_1d(128, 128, kernel_size=2, stride=1, padding=1)
+        # 128 x 2560
+        self.conv3 = Conv_1d(128, 128, kernel_size=2, stride=1, padding=1)
+        # 128 x 1280
+        self.conv4 = Conv_1d(128, 256, kernel_size=2, stride=1, padding=1)
+        # 256 x 640
+        self.conv5 = Conv_1d(256, 256, kernel_size=2, stride=1, padding=1)
+        # 256 x 320
+        self.conv6 = Conv_1d(256, 256, kernel_size=2, stride=1, padding=1)
+        # 256 x 160
+        self.conv7 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=1)
+        # 256 x 40
+        self.conv8 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=1)
+        # 256 x 10
+        self.conv9 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=2)
+        # 256 x 3
+        self.conv10 = Conv_1d(256, 512, kernel_size=2, stride=2, padding=2)
+        # 512 x 1
+        self.conv11 = Conv_1d(512, 512, kernel_size=2, stride=1, padding=1)
+        # 512 x 1
+        self.dropout = nn.Dropout(0.5)
+        self.fc1 = nn.Linear(512, 256)
+        self.fc2 = nn.Linear(256, n_classes)
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
-        # input x : 23 x 59049 x 1
-        # expected conv1d input : minibatch_size x num_channel x width
-
-        # x = x.view(x.shape[0], 1, -1)
-        # x : 23 x 1 x 59049
         # print(x.shape)
-
+        # x = self.to_db(x)
         out = self.conv1(x)
         # print(out.shape)
         out = self.conv2(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv3(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv4(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv5(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv6(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv7(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv8(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv9(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv10(out)
-        #print(out.shape)
+        # print(out.shape)
         out = self.conv11(out)
-        #print(out.shape)
+        # print(out.shape)
         out = out.view(x.shape[0], out.size(1) * out.size(2))
-        #print(out.shape)
+        # print(out.shape)
+        out = self.dropout(out)
         out = self.fc1(out)
         out = self.fc2(out)
-        logit = self.fc3(out)
-
-        logit = self.activation(logit)
-
+        logit = self.activation(out)
         return logit

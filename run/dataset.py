@@ -26,6 +26,7 @@ TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---sy
         'mood/theme---energetic', 'mood/theme---happy', 'mood/theme---emotional', 'mood/theme---film',
         'mood/theme---relaxing']
 
+
 def clip(mel, length):
     # Padding if sample is shorter than expected - both head & tail are filled with 0s
     pad_size = length - mel.shape[-1]
@@ -39,6 +40,7 @@ def clip(mel, length):
         start = np.random.randint(0, crop_size)
         mel = mel[..., start:start + length]
     return mel
+
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, tag_file, npy_root, config, type):
@@ -73,7 +75,14 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         assert 0 <= index < len(self)
-        mel_spec = self.data[index]
+        waveform = self.data[index]
+        mel_spec = librosa.feature.melspectrogram(y=waveform,
+                                             sr=self.config['sample_rate'],
+                                             n_fft=self.config['n_fft'],
+                                             hop_length=self.config['hop_length'],
+                                             n_mels=self.config['n_mels'],
+                                             fmin=self.config['fmin'],
+                                             fmax=self.config['fmax'])
         mel_spec = clip(mel_spec, self.length)
         # # Apply augmentations
         # if self.transforms is not None:
@@ -97,31 +106,16 @@ class MyDataset(torch.utils.data.Dataset):
         whole_filenames = []
         for id in tracks:
             whole_filenames.append(os.path.join(self.npy_root, id))
-        train_size = int(len(whole_filenames) * 0.1)
-        val_size = int(len(whole_filenames) * 0.01)
+        train_size = int(len(whole_filenames) * 0.8)
+        # val_size = int(len(whole_filenames) * 0.95)
         filenames = []
         random.shuffle(whole_filenames)
         if self.type == 'train':
             filenames = whole_filenames[:train_size]
         if self.type == 'valid':
-            filenames = whole_filenames[train_size:(train_size+val_size)]
-        if self.type == 'test':
-            filenames = whole_filenames[(train_size+val_size):]
+            filenames = whole_filenames[train_size:]
         for filename in tqdm(filenames):
             waveform = np.load(filename)
-            mel = librosa.feature.melspectrogram(y=waveform,
-                                                 sr=self.config['sample_rate'],
-                                                 n_fft=self.config['n_fft'],
-                                                 hop_length=self.config['hop_length'],
-                                                 n_mels=self.config['n_mels'],
-                                                 fmin=self.config['fmin'],
-                                                 fmax=self.config['fmax'])
-            # mel = torchaudio.transforms.MelSpectrogram(waveform,
-            #                                            sample_rate=self.config['sample_rate'],
-            #                                            n_fft=self.config['n_fft'],
-            #                                            f_min=self.config['fmin'],
-            #                                            f_max=self.config['fmax'],
-            #                                            n_mels=self.config['n_mels'])
-            self.data.append(mel)
+            self.data.append(waveform)
             id = os.path.join(filename.split('/')[-2], filename.split('/')[-1])
             self.labels.append(np.sum(self.mlb.transform(tracks[id]), axis=0))

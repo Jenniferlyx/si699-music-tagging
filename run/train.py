@@ -6,14 +6,11 @@ from torch.utils.tensorboard import SummaryWriter
 # python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
 import matplotlib.pyplot as plt
 import logging
-import multiprocessing
 logging.basicConfig(filename="log",
                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                     datefmt='%H:%M:%S',
                     filemode='w',
                     level=logging.INFO)
-sem = multiprocessing.Semaphore(1)
-sem.release()
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--tag_file', type=str, default='data/autotagging_top50tags.tsv')
@@ -21,6 +18,7 @@ parser.add_argument('--npy_root', type=str, default='data/npy')
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--num_epochs', type=int, default=5)
+parser.add_argument('--model', type=str, default='samplecnn')
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 writer = SummaryWriter()
@@ -39,12 +37,12 @@ def train(model, epoch, criterion, optimizer, train_loader):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        losses.append(loss)
+        losses.append(loss.detach())
         acc = accuracy(output, label)
         accs.append(acc)
     logging.info("Train - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
     writer.add_scalar("Loss/train", sum(losses) / len(losses), epoch)
-    writer.add_scalar("Acc/train", sum(accs) / len(accs))
+    writer.add_scalar("Acc/train", sum(accs) / len(accs), epoch)
     return model
 
 
@@ -56,14 +54,13 @@ def validate(model, epoch, criterion, val_loader):
         input, label = input.to(device), label.to(device)
         # input = input.unsqueeze(1)
         output = model(input)
-
         loss = criterion(output, label.float())
-        losses.append(loss)
+        losses.append(loss.detach())
         acc = accuracy(output, label)
         accs.append(acc)
     logging.info("Validate - epoch: {}, loss: {}, acc: {}".format(epoch, sum(losses) / len(losses), sum(accs) / len(accs)))
     writer.add_scalar("Loss/val", sum(losses) / len(losses), epoch)
-    writer.add_scalar("Acc/val", sum(accs) / len(accs))
+    writer.add_scalar("Acc/val", sum(accs) / len(accs), epoch)
 
 
 def accuracy(output, labels):
@@ -82,14 +79,14 @@ def accuracy(output, labels):
     return matched_1s.sum() / labels.sum()
 
 
-def save_to_onnx(model):
-    dummy_input = torch.randn(1, 96, 4000)
-    torch.onnx.export(model,
-                      dummy_input,
-                      "model/fcn.onnx",
-                      export_params=True,
-                      opset_version=15
-                      )
+# def save_to_onnx(model):
+#     dummy_input = torch.randn(1, 96, 4000)
+#     torch.onnx.export(model,
+#                       dummy_input,
+#                       "model/fcn.onnx",
+#                       export_params=True,
+#                       opset_version=15
+#                       )
 
 
 if __name__ == '__main__':
@@ -101,16 +98,25 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
-    n_classes = 50
-    model = SampleCNN(n_classes, config).to(device)
+    n_classes = len(TAGS)
+    if args.model =='samplecnn':
+        model = SampleCNN(n_classes, config).to(device)
+    elif args.model == 'crnn':
+        model = CRNN(n_classes, config).to(device)
+    else:
+        model = SampleCNN(n_classes, config).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")
-    for epoch in tqdm(range(args.num_epochs)):
+    for epoch in range(args.num_epochs):
         train(model, epoch, criterion, optimizer, train_loader)
         validate(model, epoch, criterion, val_loader)
 
-    # torch.save(model.state_dict(), 'model/fcn.pt')
-    torch.save(model, 'model/samplecnn.pt')
+    if args.model == 'samplecnn':
+        torch.save(model, 'model/samplecnn.pt')
+    elif args.model == 'crnn':
+        torch.save(model, 'model/crnn.pt')
+    else:
+        torch.save(model, 'model/samplecnn.pt')
     # save_to_onnx(model)
     writer.close()
