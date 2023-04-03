@@ -3,25 +3,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
+from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
+
 
 class Conv_1d(nn.Module):
-    def __init__(self, input_channels, output_channels, kernel_size, stride, padding):
+    def __init__(self, input_channels, output_channels, kernel_size=2, stride=1, padding=1, pooling=2):
         super(Conv_1d, self).__init__()
         self.conv = nn.Conv1d(input_channels, output_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm1d(output_channels)
         self.relu = nn.ReLU()
-        self.mp = nn.MaxPool1d(kernel_size, stride=2)
+        self.mp = nn.MaxPool1d(pooling)
     def forward(self, x):
         out = self.mp(self.relu(self.bn(self.conv(x))))
         return out
 
 class Conv_2d(nn.Module):
-    def __init__(self, input_channels, output_channels, kernel_size, stride, padding):
+    def __init__(self, input_channels, output_channels, kernel_size=2, stride=2, padding=2, pooling=2):
         super(Conv_2d, self).__init__()
         self.conv = nn.Conv2d(input_channels, output_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm2d(output_channels)
         self.relu = nn.ReLU()
-        self.mp = nn.MaxPool2d(kernel_size, stride)
+        self.mp = nn.MaxPool2d(pooling)
     def forward(self, x):
         out = self.mp(self.relu(self.bn(self.conv(x))))
         return out
@@ -58,6 +60,35 @@ class Conv_H(nn.Module):
         out = self.relu(self.bn(self.conv(out)))
         return out
 
+
+class Res_2d(nn.Module):
+    def __init__(self, input_channels, output_channels, shape=3, stride=2):
+        super(Res_2d, self).__init__()
+        # convolution
+        self.conv_1 = nn.Conv2d(input_channels, output_channels, shape, stride=stride, padding=shape//2)
+        self.bn_1 = nn.BatchNorm2d(output_channels)
+        self.conv_2 = nn.Conv2d(output_channels, output_channels, shape, padding=shape//2)
+        self.bn_2 = nn.BatchNorm2d(output_channels)
+
+        # residual
+        self.diff = False
+        if (stride != 1) or (input_channels != output_channels):
+            self.conv_3 = nn.Conv2d(input_channels, output_channels, shape, stride=stride, padding=shape//2)
+            self.bn_3 = nn.BatchNorm2d(output_channels)
+            self.diff = True
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        # convolution
+        out = self.bn_2(self.conv_2(self.relu(self.bn_1(self.conv_1(x)))))
+
+        # residual
+        if self.diff:
+            x = self.bn_3(self.conv_3(x))
+        out = x + out
+        out = self.relu(out)
+        return out
+
 class CRNN(nn.Module):
     '''
     Choi et al. 2017
@@ -75,10 +106,10 @@ class CRNN(nn.Module):
         self.spec_bn = nn.BatchNorm2d(1)
 
         # CNN
-        self.layer1 = Conv_2d(1, 64, kernel_size=2, stride=2, padding=2)
-        self.layer2 = Conv_2d(64, 128, kernel_size=2, stride=2, padding=2)
-        self.layer3 = Conv_2d(128, 128, kernel_size=2, stride=2, padding=2)
-        self.layer4 = Conv_2d(128, 128, kernel_size=2, stride=2, padding=2)
+        self.layer1 = Conv_2d(1, 64)
+        self.layer2 = Conv_2d(64, 128)
+        self.layer3 = Conv_2d(128, 128)
+        self.layer4 = Conv_2d(128, 128)
 
         # RNN
         self.layer5 = nn.GRU(128, 64, 2, batch_first=True)
@@ -121,7 +152,7 @@ class Musicnn(nn.Module):
     https://github.com/jordipons/musicnn
     '''
 
-    def __init__(self, num_classes, config):
+    def __init__(self, num_classes, config=None):
         super(Musicnn, self).__init__()
 
         # Spectrogram
@@ -138,9 +169,9 @@ class Musicnn(nn.Module):
 
         # Pons back-end
         backend_channel = 512
-        self.layer1 = Conv_1d(561, backend_channel, 7, 1, 1)
-        self.layer2 = Conv_1d(backend_channel, backend_channel, 7, 1, 1)
-        self.layer3 = Conv_1d(backend_channel, backend_channel, 7, 1, 1)
+        self.layer1 = Conv_1d(561, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
+        self.layer2 = Conv_1d(backend_channel, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
+        self.layer3 = Conv_1d(backend_channel, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
 
         # Dense
         dense_channel = 500
@@ -189,7 +220,7 @@ class FCN(nn.Module):
     Automatic tagging using deep convolutional neural networks.
     Fully convolutional network.
     '''
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, config=None):
         super(FCN, self).__init__()
 
         # Spectrogram
@@ -198,39 +229,53 @@ class FCN(nn.Module):
         #                                                     f_min=config['fmin'],
         #                                                     f_max=config['fmax'],
         #                                                     n_mels=config['n_mels'])
-        self.to_db = torchaudio.transforms.AmplitudeToDB()
+        # self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # FCN
-        self.layer1 = Conv_2d(1, 64, pooling=(2,4))
-        self.layer2 = Conv_2d(64, 128, pooling=(2,4))
-        self.layer3 = Conv_2d(128, 128, pooling=(2,4))
-        self.layer4 = Conv_2d(128, 128, pooling=(3,5))
-        self.layer5 = Conv_2d(128, 64, pooling=(4,4))
+        self.layer1 = Conv_2d(1, 64, kernel_size=3, stride=2, padding=2, pooling=3)
+        self.layer2 = Conv_2d(64, 128, kernel_size=3, stride=2, padding=2, pooling=2)
+        self.layer3 = Conv_2d(128, 128, kernel_size=3, stride=2, padding=2, pooling=2)
+        self.layer4 = Conv_2d(128, 128, kernel_size=4, stride=2, padding=4, pooling=2)
+        self.layer5 = Conv_2d(128, 64, kernel_size=3, stride=2, padding=3, pooling=2)
 
         # Dense
-        self.dense = nn.Linear(192, num_classes)
+        self.dense1 = nn.Linear(512, 256)
+        self.dense2 = nn.Linear(256, num_classes)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
         # Spectrogram
         # print(x.shape)
         # x = self.spec(x)
-        x = self.to_db(x)
+        # x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
         # FCN
+        # print(x.shape)
         x = self.layer1(x)
+        # print(x.shape)
         x = self.layer2(x)
+        # print(x.shape)
         x = self.layer3(x)
+        # print(x.shape)
         x = self.layer4(x)
+        # print(x.shape)
         x = self.layer5(x)
+        # print(x.shape)
+        # torch.Size([4, 1, 128, 10240])
+        # torch.Size([4, 64, 32, 2560])
+        # torch.Size([4, 128, 8, 640])
+        # torch.Size([4, 128, 2, 160])
+        # torch.Size([4, 128, 1, 40])
+        # torch.Size([4, 64, 1, 10])
 
         # Dense
         x = x.view(x.size(0), -1)
         x = self.dropout(x)
-        x = self.dense(x)
+        x = self.dense1(x)
+        x = self.dense2(x)
         x = nn.Sigmoid()(x)
 
         return x
@@ -246,15 +291,15 @@ class SampleCNN(nn.Module):
             nn.BatchNorm1d(128),
             nn.ReLU())
         # 128 x 5120
-        self.conv2 = Conv_1d(128, 128, kernel_size=2, stride=1, padding=1)
+        self.conv2 = Conv_1d(128, 128)
         # 128 x 2560
-        self.conv3 = Conv_1d(128, 128, kernel_size=2, stride=1, padding=1)
+        self.conv3 = Conv_1d(128, 128)
         # 128 x 1280
-        self.conv4 = Conv_1d(128, 256, kernel_size=2, stride=1, padding=1)
+        self.conv4 = Conv_1d(128, 256)
         # 256 x 640
-        self.conv5 = Conv_1d(256, 256, kernel_size=2, stride=1, padding=1)
+        self.conv5 = Conv_1d(256, 256)
         # 256 x 320
-        self.conv6 = Conv_1d(256, 256, kernel_size=2, stride=1, padding=1)
+        self.conv6 = Conv_1d(256, 256)
         # 256 x 160
         self.conv7 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=1)
         # 256 x 40
@@ -264,7 +309,7 @@ class SampleCNN(nn.Module):
         # 256 x 3
         self.conv10 = Conv_1d(256, 512, kernel_size=2, stride=2, padding=2)
         # 512 x 1
-        self.conv11 = Conv_1d(512, 512, kernel_size=2, stride=1, padding=1)
+        self.conv11 = Conv_1d(512, 512)
         # 512 x 1
         self.dropout = nn.Dropout(0.5)
         self.fc1 = nn.Linear(512, 256)
@@ -303,3 +348,142 @@ class SampleCNN(nn.Module):
         out = self.fc2(out)
         logit = self.activation(out)
         return logit
+
+class ShortChunkCNN_Res(nn.Module):
+    '''
+    Short-chunk CNN architecture with residual connections.
+    '''
+    def __init__(self, n_class=50, config=None):
+        super(ShortChunkCNN_Res, self).__init__()
+        self.spec_bn = nn.BatchNorm2d(1)
+
+        # CNN
+        n_channels = 128
+        self.layer1 = Res_2d(1, n_channels, stride=2)
+        self.layer2 = Res_2d(n_channels, n_channels, stride=2)
+        self.layer3 = Res_2d(n_channels, n_channels*2, stride=2)
+        self.layer4 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer5 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer6 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer7 = Res_2d(n_channels*2, n_channels*4, stride=2)
+
+        # Dense
+        self.dense1 = nn.Linear(n_channels*4, n_channels*4)
+        self.bn = nn.BatchNorm1d(n_channels*4)
+        self.dense2 = nn.Linear(n_channels*4, n_class)
+        self.dropout = nn.Dropout(0.5)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        # Spectrogram
+        x = x.unsqueeze(1)
+        x = self.spec_bn(x)
+
+        # CNN
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.layer5(x)
+        x = self.layer6(x)
+        x = self.layer7(x)
+        x = x.squeeze(2)
+
+        # Global Max Pooling
+        if x.size(-1) != 1:
+            x = nn.MaxPool1d(x.size(-1))(x)
+        x = x.squeeze(2)
+
+        # Dense
+        x = self.dense1(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.dense2(x)
+        x = nn.Sigmoid()(x)
+
+        return x
+
+class CNNSA(nn.Module):
+    '''
+    Won et al. 2019
+    Toward interpretable music tagging with self-attention.
+    Feature extraction with CNN + temporal summary with Transformer encoder.
+    '''
+
+    def __init__(self, n_class=50, config=None):
+        super(CNNSA, self).__init__()
+
+        self.spec_bn = nn.BatchNorm2d(1)
+
+        # CNN
+        n_channels = 128
+        self.layer1 = Res_2d(1, n_channels, stride=2)
+        self.layer2 = Res_2d(n_channels, n_channels, stride=2)
+        self.layer3 = Res_2d(n_channels, n_channels * 2, stride=2)
+        self.layer4 = Res_2d(n_channels * 2, n_channels * 2, stride=(2, 1))
+        self.layer5 = Res_2d(n_channels * 2, n_channels * 2, stride=(2, 1))
+        self.layer6 = Res_2d(n_channels * 2, n_channels * 2, stride=(2, 1))
+        self.layer7 = Res_2d(n_channels * 2, n_channels * 2, stride=(2, 1))
+
+        # Transformer encoder
+        bert_config = BertConfig(vocab_size=256,
+                                 hidden_size=256,
+                                 num_hidden_layers=2,
+                                 num_attention_heads=8,
+                                 intermediate_size=1024,
+                                 hidden_act="gelu",
+                                 hidden_dropout_prob=0.4,
+                                 max_position_embeddings=700,
+                                 attention_probs_dropout_prob=0.5)
+        self.encoder = BertEncoder(bert_config)
+        self.pooler = BertPooler(bert_config)
+        self.vec_cls = self.get_cls(256)
+
+        # Dense
+        self.dropout = nn.Dropout(0.5)
+        self.dense = nn.Linear(256, n_class)
+
+    def get_cls(self, channel):
+        np.random.seed(0)
+        single_cls = torch.Tensor(np.random.random((1, channel)))
+        vec_cls = torch.cat([single_cls for _ in range(64)], dim=0)
+        vec_cls = vec_cls.unsqueeze(1)
+        return vec_cls
+
+    def append_cls(self, x):
+        batch, _, _ = x.size()
+        part_vec_cls = self.vec_cls[:batch].clone()
+        part_vec_cls = part_vec_cls.to(x.device)
+        return torch.cat([part_vec_cls, x], dim=1)
+
+    def forward(self, x):
+        # Spectrogram
+        x = x.unsqueeze(1)
+        x = self.spec_bn(x)
+
+        # CNN
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.layer5(x)
+        x = self.layer6(x)
+        x = self.layer7(x)
+        x = x.squeeze(2)
+
+        # Get [CLS] token
+        x = x.permute(0, 2, 1)
+        x = self.append_cls(x)
+
+        # Transformer encoder
+        x = self.encoder(x)
+        x = x[-1]
+        x = self.pooler(x)
+
+        # Dense
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = nn.Sigmoid()(x)
+
+        return x

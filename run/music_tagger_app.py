@@ -42,50 +42,50 @@ def predict(mel, config):
     output_df = output_df.sort_values(by='Probability', ascending=False)
     return output_df
 
+def process_uploaded_file(file_path):
+    mel = convert(file_path)
+    output_df = predict(mel, config)
+    st.write("Result:")
+    st.dataframe(output_df)
+
+# def process_youtube(file_path):
+#     url_link = st.text_input("Please give a url link of your Youtube music")
+#     if url_link:
+#         st.text('Loading music from Youtube...')
+#         yt = YouTube(url_link)
+#         if yt:
+#             st.write(yt.title)
+#             stream = yt.streams.filter(only_audio=True).first()
+#             stream.download(filename=file_path)
+#             st.audio(file_path)
+#             return True
+#         else:
+#             st.warning('Please enter a valid YouTube video URL')
+
+
 
 if __name__ == '__main__':
     with open('config.yaml', 'r') as f:
         config = yaml.safe_load(f)
+    st.set_page_config(layout='centered')
     st.title("SI699 Music Tagger")
     # st.write(
     #     "[![Star](<https://img.shields.io/github/stars/Jenniferlyx/si699-music-tagging.svg?logo=github&style=social)](<https://github.com/Jenniferlyx/si699-music-tagging.git)")
-    st.write("Welcome!! This is a Web App to tag genre, instrument, and mood of music")
+    st.write("Welcome!! This is a Web App to tag genre, instrument, and mood of music.")
+    sample_button = st.sidebar.button('Try a sample')
+    sample_path = 'data/sample01.mp3'
+    if sample_button:
+        st.audio(sample_path)
+        st.write('Getting sample result...')
+        process_uploaded_file(sample_path)
+    uploaded_file = st.sidebar.file_uploader("Please Upload Mp3 Audio File Here.",
+                                    type=["mp3"])
+    if uploaded_file is not None:
+        st.audio(uploaded_file.read())
+        file_path = os.path.join('data', uploaded_file.name)
+        with open(file_path, 'wb') as f:
+            f.write(uploaded_file.getbuffer())
+        st.write("Getting the result...")
+        process_uploaded_file(file_path)
+        os.remove(file_path)
 
-    input_option = st.selectbox(
-        "Select a way to upload music",
-        ('', 'Upload mp3 audio', 'Youtube music url')
-    )
-    isReady = False
-    if input_option:
-        file_path = 'data/youtube.mp4'
-        if input_option == 'Upload mp3 audio':
-            uploaded_file = st.file_uploader("Please Upload mp3 Audio File Here",
-                                            type=["mp3"])
-            if uploaded_file is None:
-                st.write("Please upload an mp3 file")
-            else:
-                st.audio(uploaded_file.read())
-                file_path = os.path.join('data', uploaded_file.name)
-                with open(file_path, 'wb') as f:
-                    f.write(uploaded_file.getbuffer())
-                isReady = True
-        elif input_option == 'Youtube music url':
-            url_link = st.text_input("Please give a url link of your Youtube music")
-            if url_link:
-                st.text('Loading music from Youtube...')
-                yt = YouTube(url_link)
-                stream = yt.streams.filter(only_audio=True).first()
-                stream.download(filename=file_path)
-                st.audio(file_path)
-                isReady = True
-        if isReady:
-            # model_option = st.selectbox(
-            #     'Which model would you like to use?',
-            #     ('', 'SampleCNN', 'CRNN'))
-            # if model_option:
-            st.text('Generating the results...')
-            mel = convert(file_path)
-            output_df = predict(mel, config)
-            st.write("Result:")
-            st.dataframe(output_df)
-            os.remove(file_path)
