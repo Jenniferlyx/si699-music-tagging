@@ -1,8 +1,8 @@
-mkdir -p data/raw_data
+mkdir -p data/autotagging_moodtheme
 python3 data/download/download.py \
-        --dataset raw_30s \
+        --dataset autotagging_moodtheme \
         --type audio-low \
         --num_dir $1 \
-        data/raw_data \
+        data/autotagging_moodtheme \
         --unpack \
         --remove

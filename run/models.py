@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
+from transformers import ASTForAudioClassification
 
 
 class Conv_1d(nn.Module):
@@ -487,3 +488,17 @@ class CNNSA(nn.Module):
         x = nn.Sigmoid()(x)
 
         return x
+
+class CustomTransformer(nn.Module):
+    def __init__(self, n_class=50, config=None):
+        super(CustomTransformer, self).__init__()
+        self.model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
+        self.dense = nn.Linear(527, n_class)
+    def forward(self, x):
+        x = x.squeeze()
+        x = self.model(x)
+        # Dense
+        logits = x.logits
+        logits = self.dense(logits)
+        logits = nn.Sigmoid()(logits)
+        return logits
