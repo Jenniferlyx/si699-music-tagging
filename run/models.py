@@ -4,7 +4,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
-from transformers import ASTForAudioClassification
+from transformers import ASTForAudioClassification, Wav2Vec2Processor, AutoConfig
+from transformers.models.wav2vec2.modeling_wav2vec2 import (
+    Wav2Vec2PreTrainedModel,
+    Wav2Vec2Model
+)
 
 
 class Conv_1d(nn.Module):
@@ -241,8 +245,7 @@ class FCN(nn.Module):
         self.layer5 = Conv_2d(128, 64, kernel_size=3, stride=2, padding=3, pooling=2)
 
         # Dense
-        self.dense1 = nn.Linear(512, 256)
-        self.dense2 = nn.Linear(256, num_classes)
+        self.dense = nn.Linear(128, num_classes)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
@@ -275,8 +278,7 @@ class FCN(nn.Module):
         # Dense
         x = x.view(x.size(0), -1)
         x = self.dropout(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
+        x = self.dense(x)
         x = nn.Sigmoid()(x)
 
         return x
@@ -489,16 +491,39 @@ class CNNSA(nn.Module):
 
         return x
 
-class CustomTransformer(nn.Module):
+class ASTClassifier(nn.Module):
     def __init__(self, n_class=50, config=None):
-        super(CustomTransformer, self).__init__()
+        super(ASTClassifier, self).__init__()
         self.model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
         self.dense = nn.Linear(527, n_class)
     def forward(self, x):
-        x = x.squeeze()
         x = self.model(x)
         # Dense
         logits = x.logits
         logits = self.dense(logits)
         logits = nn.Sigmoid()(logits)
+        return logits
+
+class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+        self.wav2vec2 = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h")
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.final_dropout)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+
+    def freeze_feature_extractor(self):
+        self.wav2vec2.feature_extractor._freeze_parameters()
+
+    def forward(self, input_values):
+        outputs = self.wav2vec2(input_values)
+        hidden_states = outputs[0]
+        x = torch.mean(hidden_states, dim=1)
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        logits = nn.Sigmoid()(x)
         return logits

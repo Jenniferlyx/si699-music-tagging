@@ -4,6 +4,7 @@ from models import *
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import *
+import collections
 import warnings
 warnings.filterwarnings('ignore', message='No positive class found in y_true') # positive class is rare in y_true
 # python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
@@ -121,16 +122,26 @@ def get_model(tags):
         model = ShortChunkCNN_Res(n_classes, config).to(device)
     elif args.model == 'cnnsa':
         model = CNNSA(n_classes, config).to(device)
-    elif args.model == 'transformer':
-        model = CustomTransformer(n_classes, config).to(device)
+    elif args.model == 'ast':
+        model = ASTClassifier(n_classes, config).to(device)
+    elif args.model == 'wav2vec':
+        model_config = AutoConfig.from_pretrained(
+            "facebook/wav2vec2-base-960h",
+            num_labels=n_classes,
+            label2id={label: i for i, label in enumerate(tags)},
+            id2label={i: label for i, label in enumerate(tags)},
+            finetuning_task="wav2vec2_clf",
+        )
+        print(model_config)
+        model = Wav2Vec2ForSpeechClassification(model_config).to(device)
     else:
         model = SampleCNN(n_classes, config).to(device)
     return model
 
 
-def get_tags():
+def get_tags(tag_file):
     collected_tags = []
-    with open(args.tag_file, 'r') as file:
+    with open(tag_file, 'r') as file:
         csvreader = csv.reader(file)
         for row in csvreader:
             result = row[0].split('\t')
@@ -145,7 +156,7 @@ if __name__ == '__main__':
     with open('config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     logging.info("Preparing dataset...")
-    tags = get_tags()
+    tags = get_tags(args.tag_file)
 
     train_dataset = MyDataset(args.tag_file, args.npy_root, config, tags, "train", args.transform)
     val_dataset = MyDataset(args.tag_file, args.npy_root, config, tags, "valid", args.transform)
@@ -158,7 +169,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     logging.info("Training and validating model...")
     writer = SummaryWriter('runs/{}_{}_{}'.format(args.model, args.learning_rate, args.batch_size))
-    best_pre
+    best_pre = float('-inf')
     for epoch in range(args.num_epochs):
         train(model, epoch, criterion, optimizer, train_loader)
         best_pre = validate(model, epoch, args.learning_rate, criterion, val_loader, best_pre)

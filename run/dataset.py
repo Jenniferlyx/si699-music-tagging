@@ -8,7 +8,7 @@ import glob
 from sklearn.preprocessing import LabelBinarizer
 import csv
 random.seed(42)
-from transformers import AutoFeatureExtractor
+from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
 
 # TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---synthesizer',
 #         'genre---atmospheric', 'genre---indie', 'genre---techno', 'genre---newage',
@@ -68,16 +68,33 @@ class MyDataset(torch.utils.data.Dataset):
         waveform = self.data[index]
         target = self.labels[index]
         if self.feature_extractor_type == 'melspec':
-            mel_spec = librosa.feature.melspectrogram(y=waveform, sr=self.config['sample_rate'])
+            mel_spec = librosa.feature.melspectrogram(y=waveform,
+                                                 sr=self.config['sample_rate'],
+                                                 n_fft=self.config['n_fft'],
+                                                 hop_length=self.config['hop_length'],
+                                                 n_mels=self.config['n_mels'],
+                                                 fmin=self.config['fmin'],
+                                                 fmax=self.config['fmax'])
             mel_spec = torch.Tensor(mel_spec)
-        if self.feature_extractor_type == 'autoextractor':
+            print(mel_spec.shape)
+        if self.feature_extractor_type == 'ast':
             feature_extractor = AutoFeatureExtractor.from_pretrained(
                 "MIT/ast-finetuned-audioset-10-10-0.4593",
                 sampling_rate=self.config['sample_rate'],
                 num_mel_bins=self.config['n_mels']
             )
             encoding = feature_extractor(waveform, sampling_rate=self.config['sample_rate'], annotations=target, return_tensors="pt")
-            mel_spec = encoding['input_values']
+            mel_spec = encoding['input_values'].squeeze()
+            mel_spec = torch.transpose(mel_spec, 0, 1)
+        if self.feature_extractor_type == 'wav2vec':
+            feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+                "facebook/wav2vec2-base-960h"
+                # "m3hrdadfi/wav2vec2-base-100k-voxpopuli-gtzan-music"
+            )
+            encoding = feature_extractor(waveform, sampling_rate=self.config['sample_rate'],
+                                         return_tensors="pt")
+            mel_spec = encoding['input_values'].squeeze()
+            # print(mel_spec.shape)
         return mel_spec, target
 
     def read_file(self):
@@ -98,14 +115,14 @@ class MyDataset(torch.utils.data.Dataset):
     def prepare_data(self):
         tracks_dict = self.read_file()
         whole_filenames = sorted(glob.glob(os.path.join(self.npy_root, "*/*.npy")))
-        train_size = int(len(whole_filenames) * 0.2)
-        val_size = int(len(whole_filenames) * 0.95)
+        train_size = int(len(whole_filenames) * 0.8)
+        # val_size = int(len(whole_filenames) * 0.95)
         filenames = []
         random.shuffle(whole_filenames)
         if self.data_type == 'train':
             filenames = whole_filenames[:train_size]
         if self.data_type == 'valid':
-            filenames = whole_filenames[val_size:]
+            filenames = whole_filenames[train_size:]
         for filename in tqdm(filenames):
             waveform = np.load(filename)
             self.data.append(waveform)
