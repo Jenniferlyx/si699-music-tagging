@@ -7,24 +7,8 @@ import numpy as np
 import glob
 from sklearn.preprocessing import LabelBinarizer
 import csv
-random.seed(42)
+random.seed(0)
 from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
-
-# TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---synthesizer',
-#         'genre---atmospheric', 'genre---indie', 'genre---techno', 'genre---newage',
-#         'genre---alternative', 'genre---easylistening', 'genre---instrumentalpop',
-#         'genre---chillout', 'genre---metal', 'genre---lounge', 'genre---reggae',
-#         'genre---popfolk', 'genre---orchestral', 'genre---poprock', 'genre---trance',
-#         'genre---dance', 'genre---soundtrack', 'genre---house', 'genre---hiphop', 'genre---classical',
-#         'genre---electronic', 'genre---world', 'genre---experimental', 'genre---folk',
-#         'genre---triphop', 'genre---jazz', 'genre---funk', 'genre---pop',
-#         'instrument---strings', 'instrument---drums', 'instrument---drummachine',
-#         'instrument---electricpiano', 'instrument---guitar', 'instrument---acousticguitar',
-#         'instrument---piano', 'instrument---electricguitar', 'instrument---violin',
-#         'instrument---voice', 'instrument---keyboard', 'instrument---bass', 'instrument---computer',
-#         'mood/theme---energetic', 'mood/theme---happy', 'mood/theme---emotional', 'mood/theme---film',
-#         'mood/theme---relaxing']
-
 
 def clip(mel, length):
     # Padding if sample is shorter than expected - both head & tail are filled with 0s
@@ -76,7 +60,6 @@ class MyDataset(torch.utils.data.Dataset):
                                                  fmin=self.config['fmin'],
                                                  fmax=self.config['fmax'])
             mel_spec = torch.Tensor(mel_spec)
-            print(mel_spec.shape)
         if self.feature_extractor_type == 'ast':
             feature_extractor = AutoFeatureExtractor.from_pretrained(
                 "MIT/ast-finetuned-audioset-10-10-0.4593",

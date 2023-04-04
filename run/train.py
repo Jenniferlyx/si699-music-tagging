@@ -3,17 +3,13 @@ import argparse
 from models import *
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.metrics import *
+from torchmetrics.functional.classification import multilabel_auroc
+from torchmetrics.classification import MultilabelPrecision
 import collections
 import warnings
 warnings.filterwarnings('ignore', message='No positive class found in y_true') # positive class is rare in y_true
 # python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
 import logging
-logging.basicConfig(filename="log",
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    filemode='w',
-                    level=logging.INFO)
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--tag_file', type=str, default='data/autotagging_moodtheme.tsv')
@@ -27,6 +23,9 @@ parser.add_argument('--threshold', type=float, default=0.5)
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Run on:", device)
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+torch.manual_seed(config['seed'])
 
 
 def train(model, epoch, criterion, optimizer, train_loader):
@@ -88,54 +87,53 @@ def get_eval_metrics(outputs, labels, run_type, epoch, losses):
     matched_1s = torch.mul(prob_classes, labels)
     correct_tag_percentage = matched_1s.sum() / labels.sum()
 
-    # 2. accuracy if set to 1 if exceeds threshold
-    threshold_classes = outputs
-    threshold_classes[threshold_classes > args.threshold] = 1
-    threshold_classes[threshold_classes <= args.threshold] = 0
-    acc = (threshold_classes == labels).sum() / len(threshold_classes.reshape(-1))
+    # 2. Auroc
+    auroc = multilabel_auroc(outputs, labels, num_labels=59, average="macro", thresholds=None).item()
 
     # 3. avg precision
-    avg_pre = average_precision_score(labels.detach().numpy(), outputs.detach().numpy(), average='macro')
+    precision = MultilabelPrecision(average='macro', num_labels=59, thresholds=None)
+    pre = precision(outputs, labels).item()
 
     # write tensorboard and logging file
     writer.add_scalar("Loss/{}".format(run_type), np.mean(losses), epoch)
-    writer.add_scalar("Acc/{}".format(run_type), acc, epoch)
-    writer.add_scalar("Pre/{}".format(run_type), avg_pre, epoch)
+    writer.add_scalar("Auroc/{}".format(run_type), auroc, epoch)
+    writer.add_scalar("Pre/{}".format(run_type), pre, epoch)
     writer.add_scalar("Avg_percent/{}".format(run_type), correct_tag_percentage, epoch)
-    logging.info("{} - epoch: {}, loss: {}, acc: {}, pre: {}, avg percent: {}".format(
-        run_type, epoch, np.mean(losses), acc, avg_pre, correct_tag_percentage))
+    print("{} - epoch: {}, loss: {}, auroc: {}, pre: {}, avg percent: {}".format(
+        run_type, epoch, np.mean(losses), auroc, pre, correct_tag_percentage))
+    logging.info("{} - epoch: {}, loss: {}, auroc: {}, pre: {}, avg percent: {}".format(
+        run_type, epoch, np.mean(losses), auroc, pre, correct_tag_percentage))
     return correct_tag_percentage
 
 
 def get_model(tags):
-    n_classes = len(tags)
-    print("Number of classes to predict:", n_classes)
+    n_labels = len(tags)
+    print("Number of classes to predict:", n_labels)
     if args.model =='samplecnn':
-        model = SampleCNN(n_classes, config).to(device)
+        model = SampleCNN(n_labels, config).to(device)
     elif args.model == 'crnn':
-        model = CRNN(n_classes, config).to(device)
+        model = CRNN(n_labels, config).to(device)
     elif args.model =='fcn':
-        model = FCN(n_classes, config).to(device)
+        model = FCN(n_labels, config).to(device)
     elif args.model == 'musicnn':
-        model = Musicnn(n_classes, config).to(device)
+        model = Musicnn(n_labels, config).to(device)
     elif args.model == 'shortchunkcnn_res':
-        model = ShortChunkCNN_Res(n_classes, config).to(device)
+        model = ShortChunkCNN_Res(n_labels, config).to(device)
     elif args.model == 'cnnsa':
-        model = CNNSA(n_classes, config).to(device)
+        model = CNNSA(n_labels, config).to(device)
     elif args.model == 'ast':
-        model = ASTClassifier(n_classes, config).to(device)
+        model = ASTClassifier(n_labels, config).to(device)
     elif args.model == 'wav2vec':
         model_config = AutoConfig.from_pretrained(
             "facebook/wav2vec2-base-960h",
-            num_labels=n_classes,
+            num_labels=n_labels,
             label2id={label: i for i, label in enumerate(tags)},
             id2label={i: label for i, label in enumerate(tags)},
             finetuning_task="wav2vec2_clf",
         )
-        print(model_config)
         model = Wav2Vec2ForSpeechClassification(model_config).to(device)
     else:
-        model = SampleCNN(n_classes, config).to(device)
+        model = SampleCNN(n_labels, config).to(device)
     return model
 
 
@@ -153,8 +151,11 @@ def get_tags(tag_file):
 
 
 if __name__ == '__main__':
-    with open('config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
+    logging.basicConfig(filename="log/log_{}_{}_{}".format(args.model, args.learning_rate, args.batch_size),
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        filemode='w',
+                        level=logging.INFO)
     logging.info("Preparing dataset...")
     tags = get_tags(args.tag_file)
 

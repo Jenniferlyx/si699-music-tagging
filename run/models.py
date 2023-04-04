@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
-from transformers import ASTForAudioClassification, Wav2Vec2Processor, AutoConfig
+# from transformers import ASTForAudioClassification, Wav2Vec2Processor, AutoConfig
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2PreTrainedModel,
     Wav2Vec2Model
@@ -491,18 +491,18 @@ class CNNSA(nn.Module):
 
         return x
 
-class ASTClassifier(nn.Module):
-    def __init__(self, n_class=50, config=None):
-        super(ASTClassifier, self).__init__()
-        self.model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
-        self.dense = nn.Linear(527, n_class)
-    def forward(self, x):
-        x = self.model(x)
-        # Dense
-        logits = x.logits
-        logits = self.dense(logits)
-        logits = nn.Sigmoid()(logits)
-        return logits
+# class ASTClassifier(nn.Module):
+#     def __init__(self, n_class=50, config=None):
+#         super(ASTClassifier, self).__init__()
+#         self.model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
+#         self.dense = nn.Linear(527, n_class)
+#     def forward(self, x):
+#         x = self.model(x)
+#         # Dense
+#         logits = x.logits
+#         logits = self.dense(logits)
+#         logits = nn.Sigmoid()(logits)
+#         return logits
 
 class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
     def __init__(self, config):

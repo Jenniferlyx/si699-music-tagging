@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-
 # Gelu
 def gelu(x):
     """Implementation of the gelu activation function.

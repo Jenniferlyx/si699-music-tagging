@@ -8,7 +8,7 @@ import yaml
 import csv
 parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--mp3_data_root', type=str, default='data/raw_data')
+parser.add_argument('--mp3_data_root', type=str, default='data/autotagging_moodtheme')
 parser.add_argument('--output_root', type=str, default='data/npy')
 parser.add_argument('--tag_file', type=str, default='data/autotagging_moodtheme.tsv')
 parser.add_argument('--override', type=bool, default=False,
@@ -16,7 +16,7 @@ parser.add_argument('--override', type=bool, default=False,
 args = parser.parse_args()
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-np.random.seed(0)
+np.random.seed(config['seed'])
 
 
 def get_waveform(mp3_filename, npy_filename, desired_length):
