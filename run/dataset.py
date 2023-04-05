@@ -3,6 +3,9 @@ import random
 import torch
 import librosa
 from tqdm import tqdm
+import json
+import collections
+import matplotlib.pyplot as plt
 import numpy as np
 import glob
 from sklearn.preprocessing import LabelBinarizer
@@ -81,7 +84,14 @@ class MyDataset(torch.utils.data.Dataset):
         return mel_spec, target
 
     def read_file(self):
+        f = open('tag_categorize.json')
+        data = json.load(f)
+        categorize = {}
+        for k, v in data.items():
+            for i in v[1:-1].split(', '):
+                categorize[i] = k
         tracks = {}
+        total_tags = []
         with open(self.tag_file) as fp:
             reader = csv.reader(fp, delimiter='\t')
             next(reader, None)  # skip header
@@ -91,8 +101,12 @@ class MyDataset(torch.utils.data.Dataset):
                 track_id = row[3].replace('.mp3', '.npy')
                 tags = []
                 for tag in row[5:]:
-                    tags.append(tag.split('---')[-1])
+                    tags.append(categorize[tag.split('---')[-1]])
                 tracks[track_id] = tags
+                total_tags += tags
+        print("Distribution of tags:", collections.Counter(total_tags))
+        plt.hist(total_tags)
+        plt.savefig('dist.png')
         return tracks
 
     def prepare_data(self):

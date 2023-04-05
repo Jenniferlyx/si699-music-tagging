@@ -60,7 +60,7 @@ if __name__ == '__main__':
         if file_id not in track_set:
             continue
         npy_file_name = os.path.join(args.output_root, file_id)
-        if os.path.exists(npy_file_name) and not args.override:
+        if os.path.isfile(npy_file_name) and not args.override:
             continue
         get_waveform(mp3_filename, npy_file_name, desired_length)
         # x, _ = librosa.load(file, sr=config['sample_rate'], mono=True)

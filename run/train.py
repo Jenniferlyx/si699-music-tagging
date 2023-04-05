@@ -3,23 +3,21 @@ import argparse
 from models import *
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-from torchmetrics.functional.classification import multilabel_auroc
-from torchmetrics.classification import MultilabelPrecision
+# from torchmetrics.functional.classification import multilabel_auroc
+# from torchmetrics.classification import MultilabelPrecision
 import collections
 import warnings
-warnings.filterwarnings('ignore', message='No positive class found in y_true') # positive class is rare in y_true
 # python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
 import logging
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--tag_file', type=str, default='data/autotagging_moodtheme.tsv')
-parser.add_argument('--npy_root', type=str, default='data/theme_npy')
-parser.add_argument('--batch_size', type=int, default=2)
+parser.add_argument('--npy_root', type=str, default='data/npy')
+parser.add_argument('--batch_size', type=int, default=4)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--num_epochs', type=int, default=5)
 parser.add_argument('--model', type=str, default='samplecnn')
 parser.add_argument('--transform', type=str, default='melspec')
-parser.add_argument('--threshold', type=float, default=0.5)
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Run on:", device)
@@ -65,6 +63,7 @@ def validate(model, epoch, learning_rate, criterion, val_loader, best_pre):
     pre = get_eval_metrics(prediction, ground_truth, 'val', epoch, losses)
     if pre > best_pre:
         print("Best precision:", pre)
+        logging.info("Best precision:", pre)
         best_pre = pre
         torch.save(model, 'model/{}_best_score_{}.pt'.format(args.model, learning_rate))
     return best_pre
@@ -138,15 +137,21 @@ def get_model(tags):
 
 
 def get_tags(tag_file):
+    f = open('tag_categorize.json')
+    data = json.load(f)
+    categorize = {}
+    for k, v in data.items():
+        for i in v[1:-1].split(', '):
+            categorize[i] = k
     collected_tags = []
-    with open(tag_file, 'r') as file:
-        csvreader = csv.reader(file)
-        for row in csvreader:
-            result = row[0].split('\t')
-            for splitted in result:
-                if 'mood/theme---' in splitted:
-                    collected_tags.append(splitted.split('---')[-1])
+    with open(tag_file, 'r') as fp:
+        reader = csv.reader(fp, delimiter='\t')
+        next(reader, None)
+        for row in reader:
+            for tag in row[5:]:
+                collected_tags.append(categorize[tag.split('---')[-1]])
     collected_tags = collections.Counter(collected_tags)
+    print(collected_tags)
     return list(collected_tags.keys())
 
 
