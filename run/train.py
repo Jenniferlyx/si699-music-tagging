@@ -3,12 +3,14 @@ import argparse
 from models import *
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-# from torchmetrics.functional.classification import multilabel_auroc
-# from torchmetrics.classification import MultilabelPrecision
+from torchmetrics.functional.classification import multilabel_auroc
+from torchmetrics.classification import MultilabelPrecision
 import collections
 import warnings
 # python3 /Users/yuxiaoliu/miniconda3/envs/si699-music-tagging/lib/python3.10/site-packages/tensorboard/main.py --logdir=runs
 import logging
+import json
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--tag_file', type=str, default='data/autotagging_moodtheme.tsv')
@@ -17,7 +19,7 @@ parser.add_argument('--batch_size', type=int, default=4)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--num_epochs', type=int, default=5)
 parser.add_argument('--model', type=str, default='samplecnn')
-parser.add_argument('--transform', type=str, default='melspec')
+parser.add_argument('--transform', type=str, default='raw')
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Run on:", device)
@@ -39,15 +41,14 @@ def train(model, epoch, criterion, optimizer, train_loader):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        losses.append(loss.detach())
+        losses.append(loss.cpu().detach())
         ground_truth.append(label)
         prediction.append(output)
     get_eval_metrics(prediction, ground_truth, 'train', epoch, losses)
-    return model
 
 
 @torch.no_grad()
-def validate(model, epoch, learning_rate, criterion, val_loader, best_pre):
+def validate(model, epoch, criterion, val_loader):
     losses = []
     ground_truth = []
     prediction = []
@@ -57,19 +58,15 @@ def validate(model, epoch, learning_rate, criterion, val_loader, best_pre):
         # input = input.unsqueeze(1)
         output = model(input)
         loss = criterion(output, label.float())
-        losses.append(loss.detach())
+        losses.append(loss.cpu().detach())
         ground_truth.append(label)
         prediction.append(output)
     pre = get_eval_metrics(prediction, ground_truth, 'val', epoch, losses)
-    if pre > best_pre:
-        print("Best precision:", pre)
-        logging.info("Best precision:", pre)
-        best_pre = pre
-        torch.save(model, 'model/{}_best_score_{}.pt'.format(args.model, learning_rate))
-    return best_pre
+    return pre
 
 
 def get_eval_metrics(outputs, labels, run_type, epoch, losses):
+    n_classes = labels.size(1)
     outputs = torch.cat(outputs, dim=0)
     labels = torch.cat(labels, dim=0)
     assert outputs.shape == labels.shape
@@ -87,11 +84,11 @@ def get_eval_metrics(outputs, labels, run_type, epoch, losses):
     correct_tag_percentage = matched_1s.sum() / labels.sum()
 
     # 2. Auroc
-    auroc = multilabel_auroc(outputs, labels, num_labels=59, average="macro", thresholds=None).item()
+    auroc = multilabel_auroc(outputs, labels, num_labels=n_classes, average="macro", thresholds=None).item()
 
     # 3. avg precision
-    precision = MultilabelPrecision(average='macro', num_labels=59, thresholds=None)
-    pre = precision(outputs, labels).item()
+    metric = MultilabelPrecision(average='macro', num_labels=n_classes, thresholds=None).to(device)
+    pre = metric(outputs, labels).item()
 
     # write tensorboard and logging file
     writer.add_scalar("Loss/{}".format(run_type), np.mean(losses), epoch)
@@ -105,54 +102,74 @@ def get_eval_metrics(outputs, labels, run_type, epoch, losses):
     return correct_tag_percentage
 
 
-def get_model(tags):
-    n_labels = len(tags)
-    print("Number of classes to predict:", n_labels)
+def get_model(tags, dist_tags):
+    n_classes = len(tags)
     if args.model =='samplecnn':
-        model = SampleCNN(n_labels, config).to(device)
+        model = SampleCNN(n_classes, config).to(device)
     elif args.model == 'crnn':
-        model = CRNN(n_labels, config).to(device)
+        model = CRNN(n_classes, config).to(device)
     elif args.model =='fcn':
-        model = FCN(n_labels, config).to(device)
+        model = FCN(n_classes, config).to(device)
     elif args.model == 'musicnn':
-        model = Musicnn(n_labels, config).to(device)
+        model = Musicnn(n_classes, config).to(device)
     elif args.model == 'shortchunkcnn_res':
-        model = ShortChunkCNN_Res(n_labels, config).to(device)
+        model = ShortChunkCNN_Res(n_classes, config).to(device)
     elif args.model == 'cnnsa':
-        model = CNNSA(n_labels, config).to(device)
-    elif args.model == 'ast':
-        model = ASTClassifier(n_labels, config).to(device)
+        model = CNNSA(n_classes, config).to(device)
+    elif args.model == 'baseline1':
+        model = Baseline1(dist_tags, tags).to(device)
+    elif args.model == 'baseline2':
+        model = Baseline2(n_classes).to(device)
     elif args.model == 'wav2vec':
         model_config = AutoConfig.from_pretrained(
             "facebook/wav2vec2-base-960h",
-            num_labels=n_labels,
+            num_labels=n_classes,
             label2id={label: i for i, label in enumerate(tags)},
             id2label={i: label for i, label in enumerate(tags)},
             finetuning_task="wav2vec2_clf",
         )
         model = Wav2Vec2ForSpeechClassification(model_config).to(device)
     else:
-        model = SampleCNN(n_labels, config).to(device)
+        model = SampleCNN(n_classes, config).to(device)
     return model
 
 
-def get_tags(tag_file):
-    f = open('tag_categorize.json')
-    data = json.load(f)
-    categorize = {}
-    for k, v in data.items():
-        for i in v[1:-1].split(', '):
-            categorize[i] = k
-    collected_tags = []
-    with open(tag_file, 'r') as fp:
+def get_tags(tag_file, npy_root, isMap):
+    # id2title_dict = {}
+    # with open('data/raw.meta.tsv') as fp:
+    #     reader = csv.reader(fp, delimiter='\t')
+    #     next(reader, None)
+    #     for row in reader:
+    #         id2title_dict[row[0]] = row[3]
+    if isMap:
+        f = open('tag_categorize.json')
+        data = json.load(f)
+        categorize = {}
+        for k, v in data.items():
+            for i in v[1:-1].split(', '):
+                categorize[i] = k
+    tracks = {}
+    total_tags = []
+    with open(tag_file) as fp:
         reader = csv.reader(fp, delimiter='\t')
-        next(reader, None)
+        next(reader, None)  # skip header
         for row in reader:
+            if not os.path.exists(os.path.join(npy_root, row[3].replace('.mp3', '.npy'))):
+                print(os.path.join(npy_root, row[3].replace('.mp3', '.npy')))
+                continue
+            track_id = row[3].split('.')[0]
+            tags = []
             for tag in row[5:]:
-                collected_tags.append(categorize[tag.split('---')[-1]])
-    collected_tags = collections.Counter(collected_tags)
-    print(collected_tags)
-    return list(collected_tags.keys())
+                if isMap:
+                    tags.append(categorize[tag.split('---')[-1]])
+                else:
+                    tags.append(tag.split('---')[-1])
+            tracks[track_id] = list(set(tags))
+            total_tags += list(set(tags))
+    print("Distribution of tags:", collections.Counter(total_tags))
+    plt.hist(total_tags)
+    plt.savefig('dist.png')
+    return tracks, list(set(total_tags)), collections.Counter(total_tags)
 
 
 if __name__ == '__main__':
@@ -162,14 +179,14 @@ if __name__ == '__main__':
                         filemode='w',
                         level=logging.INFO)
     logging.info("Preparing dataset...")
-    tags = get_tags(args.tag_file)
+    tracks_dict, tags, dist_tags = get_tags(args.tag_file, args.npy_root, True)
 
-    train_dataset = MyDataset(args.tag_file, args.npy_root, config, tags, "train", args.transform)
-    val_dataset = MyDataset(args.tag_file, args.npy_root, config, tags, "valid", args.transform)
+    train_dataset = MyDataset(tracks_dict, args.npy_root, config, tags, "train", args.transform)
+    val_dataset = MyDataset(tracks_dict, args.npy_root, config, tags, "valid", args.transform)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
 
-    model = get_model(tags)
+    model = get_model(tags, dist_tags)
     # Binary cross-entropy with logits loss combines a Sigmoid layer and the BCELoss in one single class.
     criterion = nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -178,7 +195,10 @@ if __name__ == '__main__':
     best_pre = float('-inf')
     for epoch in range(args.num_epochs):
         train(model, epoch, criterion, optimizer, train_loader)
-        best_pre = validate(model, epoch, args.learning_rate, criterion, val_loader, best_pre)
-
-    # torch.save(model, 'model/{}.pt'.format(args.model))
+        pre = validate(model, epoch, criterion, val_loader)
+        if pre > best_pre:
+            print("Best avg precision:", pre)
+            logging.info("Best avg precision:", pre)
+            best_pre = pre
+            torch.save(model.state_dict(), 'model/{}_best_score_{}_{}.pt'.format(args.model, args.learning_rate, len(tags)))
     writer.close()
