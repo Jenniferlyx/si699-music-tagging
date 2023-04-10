@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
-# from transformers import ASTForAudioClassification, Wav2Vec2Processor, AutoConfig
+from transformers import AutoConfig
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2PreTrainedModel,
     Wav2Vec2Model
@@ -12,7 +12,7 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
 
 
 class Conv_1d(nn.Module):
-    def __init__(self, input_channels, output_channels, kernel_size=2, stride=1, padding=1, pooling=2):
+    def __init__(self, input_channels, output_channels, kernel_size=3, stride=1, padding=0, pooling=3):
         super(Conv_1d, self).__init__()
         self.conv = nn.Conv1d(input_channels, output_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm1d(output_channels)
@@ -159,9 +159,14 @@ class Musicnn(nn.Module):
 
     def __init__(self, num_classes, config=None):
         super(Musicnn, self).__init__()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                  n_fft=config['n_fft'],
+                                                  f_min=config['fmin'],
+                                                  f_max=config['fmax'],
+                                                  n_mels=config['n_mels'])
 
         # Spectrogram
-        # self.to_db = torchaudio.transforms.AmplitudeToDB()
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # Pons front-end
@@ -188,8 +193,8 @@ class Musicnn(nn.Module):
 
     def forward(self, x):
         # Spectrogram
-        # x = self.spec(x)
-        # x = self.to_db(x)
+        x = self.spec(x)
+        x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
@@ -289,10 +294,11 @@ class SampleCNN(nn.Module):
         super(SampleCNN, self).__init__()
         # self.to_db = torchaudio.transforms.AmplitudeToDB()
         # 128 x 10240
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(config['n_mels'], 128, kernel_size=5, stride=2, padding=2),
-            nn.BatchNorm1d(128),
-            nn.ReLU())
+        # self.conv1 = nn.Sequential(
+        #     nn.Conv1d(1, 128, kernel_size=3, stride=3, padding=1),
+        #     nn.BatchNorm1d(128),
+        #     nn.ReLU())
+        self.conv1 = Conv_1d(1, 128, kernel_size=3, stride=3, padding=0, pooling=1)
         # 128 x 5120
         self.conv2 = Conv_1d(128, 128)
         # 128 x 2560
@@ -304,24 +310,25 @@ class SampleCNN(nn.Module):
         # 256 x 320
         self.conv6 = Conv_1d(256, 256)
         # 256 x 160
-        self.conv7 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=1)
+        self.conv7 = Conv_1d(256, 256)
         # 256 x 40
-        self.conv8 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=1)
+        self.conv8 = Conv_1d(256, 256)
         # 256 x 10
-        self.conv9 = Conv_1d(256, 256, kernel_size=2, stride=2, padding=2)
+        self.conv9 = Conv_1d(256, 256)
         # 256 x 3
-        self.conv10 = Conv_1d(256, 512, kernel_size=2, stride=2, padding=2)
+        self.conv10 = Conv_1d(256, 512)
         # 512 x 1
-        self.conv11 = Conv_1d(512, 512)
+        self.conv11 = Conv_1d(512, 512, kernel_size=1, stride=1, padding=0, pooling=1)
         # 512 x 1
         self.dropout = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, n_classes)
+        self.fc1 = nn.Linear(1536, 512)
+        self.fc2 = nn.Linear(512, n_classes)
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
         # print(x.shape)
         # x = self.to_db(x)
+        x = x.unsqueeze(1)
         out = self.conv1(x)
         # print(out.shape)
         out = self.conv2(out)
@@ -352,60 +359,7 @@ class SampleCNN(nn.Module):
         logit = self.activation(out)
         return logit
 
-class ShortChunkCNN_Res(nn.Module):
-    '''
-    Short-chunk CNN architecture with residual connections.
-    '''
-    def __init__(self, n_class=50, config=None):
-        super(ShortChunkCNN_Res, self).__init__()
-        self.spec_bn = nn.BatchNorm2d(1)
 
-        # CNN
-        n_channels = 128
-        self.layer1 = Res_2d(1, n_channels, stride=2)
-        self.layer2 = Res_2d(n_channels, n_channels, stride=2)
-        self.layer3 = Res_2d(n_channels, n_channels*2, stride=2)
-        self.layer4 = Res_2d(n_channels*2, n_channels*2, stride=2)
-        self.layer5 = Res_2d(n_channels*2, n_channels*2, stride=2)
-        self.layer6 = Res_2d(n_channels*2, n_channels*2, stride=2)
-        self.layer7 = Res_2d(n_channels*2, n_channels*4, stride=2)
-
-        # Dense
-        self.dense1 = nn.Linear(n_channels*4, n_channels*4)
-        self.bn = nn.BatchNorm1d(n_channels*4)
-        self.dense2 = nn.Linear(n_channels*4, n_class)
-        self.dropout = nn.Dropout(0.5)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        # Spectrogram
-        x = x.unsqueeze(1)
-        x = self.spec_bn(x)
-
-        # CNN
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.layer5(x)
-        x = self.layer6(x)
-        x = self.layer7(x)
-        x = x.squeeze(2)
-
-        # Global Max Pooling
-        if x.size(-1) != 1:
-            x = nn.MaxPool1d(x.size(-1))(x)
-        x = x.squeeze(2)
-
-        # Dense
-        x = self.dense1(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        x = self.dropout(x)
-        x = self.dense2(x)
-        x = nn.Sigmoid()(x)
-
-        return x
 
 class CNNSA(nn.Module):
     '''
@@ -527,3 +481,20 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
         x = self.out_proj(x)
         logits = nn.Sigmoid()(x)
         return logits
+class Baseline1(nn.Module):
+    '''
+    Popularity baseline always predicts the most frequent tag
+    among tracks in the training set.
+    '''
+    def __init__(self, dist_tags, tags):
+        super(Baseline1, self).__init__()
+        total = 0
+        for v in dist_tags.values():
+            total += v
+        self.probs = []
+        for t in tags:
+            self.probs.append(dist_tags[t]/total)
+        self.dense = nn.Linear(2, 2)
+    def forward(self, x):
+        x = self.dense(x)
+        return self.probs

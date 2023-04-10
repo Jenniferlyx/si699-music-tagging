@@ -5,5 +5,5 @@ n_mels: 128
 fmin: 0
 fmax: 8000
 topk: 5
-duration: 30
+duration: 15
 seed: 0
