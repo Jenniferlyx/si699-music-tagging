@@ -3,15 +3,13 @@ import random
 import torch
 import librosa
 from tqdm import tqdm
-import json
-import collections
-import matplotlib.pyplot as plt
 import numpy as np
 import glob
 from sklearn.preprocessing import LabelBinarizer
 import csv
 random.seed(0)
 from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
+from sentence_transformers import SentenceTransformer
 
 def clip(mel, length):
     # Padding if sample is shorter than expected - both head & tail are filled with 0s
@@ -29,14 +27,16 @@ def clip(mel, length):
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, tag_file, npy_root, config, tags, data_type, feature_extractor_type):
+    def __init__(self, tracks_dict, npy_root, config, tags, data_type, feature_extractor_type):
         # assert len(filenames) == len(labels), f'Inconsistent length of filenames and labels.'
         self.npy_root = npy_root
         self.config = config
-        self.tag_file = tag_file
+        self.tracks_dict = tracks_dict
         self.tags = tags
         self.mlb = LabelBinarizer().fit(self.tags)
+        # self.sent2vec = SentenceTransformer('all-MiniLM-L6-v2')
         self.data = []
+        # self.title = []
         self.labels = []
         self.data_type = data_type
         # transform waveform into spectrogram
@@ -53,7 +53,10 @@ class MyDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         assert 0 <= index < len(self)
         waveform = self.data[index]
+        # title = torch.Tensor(self.sent2vec.encode(self.title[index]))
         target = self.labels[index]
+        if self.feature_extractor_type == 'raw':
+            mel_spec = torch.Tensor(waveform)
         if self.feature_extractor_type == 'melspec':
             mel_spec = librosa.feature.melspectrogram(y=waveform,
                                                  sr=self.config['sample_rate'],
@@ -81,36 +84,10 @@ class MyDataset(torch.utils.data.Dataset):
                                          return_tensors="pt")
             mel_spec = encoding['input_values'].squeeze()
             # print(mel_spec.shape)
+
         return mel_spec, target
 
-    def read_file(self):
-        f = open('tag_categorize.json')
-        data = json.load(f)
-        categorize = {}
-        for k, v in data.items():
-            for i in v[1:-1].split(', '):
-                categorize[i] = k
-        tracks = {}
-        total_tags = []
-        with open(self.tag_file) as fp:
-            reader = csv.reader(fp, delimiter='\t')
-            next(reader, None)  # skip header
-            for row in reader:
-                if not os.path.exists(os.path.join(self.npy_root, row[3].replace('.mp3', '.npy'))):
-                    continue
-                track_id = row[3].replace('.mp3', '.npy')
-                tags = []
-                for tag in row[5:]:
-                    tags.append(categorize[tag.split('---')[-1]])
-                tracks[track_id] = tags
-                total_tags += tags
-        print("Distribution of tags:", collections.Counter(total_tags))
-        plt.hist(total_tags)
-        plt.savefig('dist.png')
-        return tracks
-
     def prepare_data(self):
-        tracks_dict = self.read_file()
         whole_filenames = sorted(glob.glob(os.path.join(self.npy_root, "*/*.npy")))
         train_size = int(len(whole_filenames) * 0.8)
         # val_size = int(len(whole_filenames) * 0.95)
@@ -124,4 +101,5 @@ class MyDataset(torch.utils.data.Dataset):
             waveform = np.load(filename)
             self.data.append(waveform)
             id = os.path.join(filename.split('/')[-2], filename.split('/')[-1])
-            self.labels.append(np.sum(self.mlb.transform(tracks_dict[id]), axis=0))
+            # self.title.append(self.tracks_dict[id][1])
+            self.labels.append(np.sum(self.mlb.transform(self.tracks_dict[id]), axis=0))
