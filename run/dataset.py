@@ -1,83 +1,97 @@
-import csv
 import os
 import random
-
 import torch
 import librosa
 from tqdm import tqdm
+import json
+import collections
+import matplotlib.pyplot as plt
 import numpy as np
 import glob
 from sklearn.preprocessing import LabelBinarizer
+import csv
+random.seed(0)
+from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
 
-random.seed(42)
+def clip(mel, length):
+    # Padding if sample is shorter than expected - both head & tail are filled with 0s
+    pad_size = length - mel.shape[-1]
+    if pad_size > 0:
+        offset = pad_size // 2
+        mel = np.pad(mel, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
 
-TAGS = ['genre---downtempo', 'genre---ambient', 'genre---rock', 'instrument---synthesizer',
-        'genre---atmospheric', 'genre---indie', 'genre---techno', 'genre---newage',
-        'genre---alternative', 'genre---easylistening', 'genre---instrumentalpop',
-        'genre---chillout', 'genre---metal', 'genre---lounge', 'genre---reggae',
-        'genre---popfolk', 'genre---orchestral', 'genre---poprock', 'genre---trance',
-        'genre---dance', 'genre---soundtrack', 'genre---house', 'genre---hiphop', 'genre---classical',
-        'genre---electronic', 'genre---world', 'genre---experimental', 'genre---folk',
-        'genre---triphop', 'genre---jazz', 'genre---funk', 'genre---pop',
-        'instrument---strings', 'instrument---drums', 'instrument---drummachine',
-        'instrument---electricpiano', 'instrument---guitar', 'instrument---acousticguitar',
-        'instrument---piano', 'instrument---electricguitar', 'instrument---violin',
-        'instrument---voice', 'instrument---keyboard', 'instrument---bass', 'instrument---computer',
-        'mood/theme---energetic', 'mood/theme---happy', 'mood/theme---emotional', 'mood/theme---film',
-        'mood/theme---relaxing']
+    # Random crop
+    crop_size = mel.shape[-1] - length
+    if crop_size > 0:
+        start = np.random.randint(0, crop_size)
+        mel = mel[..., start:start + length]
+    return mel
 
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, tag_file, npy_root, config, type):
+    def __init__(self, tag_file, npy_root, config, tags, data_type, feature_extractor_type):
         # assert len(filenames) == len(labels), f'Inconsistent length of filenames and labels.'
-        self.tag_file = tag_file
         self.npy_root = npy_root
         self.config = config
-        self.mlb = LabelBinarizer().fit(TAGS)
+        self.tag_file = tag_file
+        self.tags = tags
+        self.mlb = LabelBinarizer().fit(self.tags)
         self.data = []
         self.labels = []
-        self.type = type
+        self.data_type = data_type
         # transform waveform into spectrogram
         self.prepare_data()
-        # make sure all of the data has the same dimension
-        self.length = int(
-            (10 * self.config['sample_rate'] + self.config['hop_length'] - 1) // self.config['hop_length'])
-
-        print('Dataset will yield mel spectrogram {} data samples in shape (1, {}, {})'.format(len(self.data),
-                                                                                               self.config['n_mels'],
-                                                                                               self.length))
+        self.feature_extractor_type = feature_extractor_type
+        # print('Dataset will yield mel spectrogram {} data samples in shape (1, {}, {})'.format(len(self.data),
+        #                                                                                        self.config['n_mels'],
+        #                                                                                        self.length))
         # self.transforms = transforms
-
-        # # Calculate length of clip this dataset will make
-        # self.sample_length = int((cfg.clip_length * cfg.sample_rate + cfg.hop_length - 1) // cfg.hop_length)
-
-        # # Test with first file
-        # assert self[0][0].shape[-1] == self.sample_length, f'Check your files, failed to load {filenames[0]}'
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index):
         assert 0 <= index < len(self)
-        mel_spec = self.data[index]
-        # Padding if sample is shorter than expected - both head & tail are filled with 0s
-        pad_size = self.length - mel_spec.shape[-1]
-        if pad_size > 0:
-            offset = pad_size // 2
-            mel_spec = np.pad(mel_spec, ((0, 0), (0, 0), (offset, pad_size - offset)), 'constant')
-
-        # Random crop
-        crop_size = mel_spec.shape[-1] - self.length
-        if crop_size > 0:
-            start = np.random.randint(0, crop_size)
-            mel_spec = mel_spec[..., start:start + self.length]
-        # # Apply augmentations
-        # if self.transforms is not None:
-        #     log_mel_spec = self.transforms(log_mel_spec)
-        return torch.Tensor(mel_spec), self.labels[index]
+        waveform = self.data[index]
+        target = self.labels[index]
+        if self.feature_extractor_type == 'melspec':
+            mel_spec = librosa.feature.melspectrogram(y=waveform,
+                                                 sr=self.config['sample_rate'],
+                                                 n_fft=self.config['n_fft'],
+                                                 hop_length=self.config['hop_length'],
+                                                 n_mels=self.config['n_mels'],
+                                                 fmin=self.config['fmin'],
+                                                 fmax=self.config['fmax'])
+            mel_spec = torch.Tensor(mel_spec)
+        if self.feature_extractor_type == 'ast':
+            feature_extractor = AutoFeatureExtractor.from_pretrained(
+                "MIT/ast-finetuned-audioset-10-10-0.4593",
+                sampling_rate=self.config['sample_rate'],
+                num_mel_bins=self.config['n_mels']
+            )
+            encoding = feature_extractor(waveform, sampling_rate=self.config['sample_rate'], annotations=target, return_tensors="pt")
+            mel_spec = encoding['input_values'].squeeze()
+            mel_spec = torch.transpose(mel_spec, 0, 1)
+        if self.feature_extractor_type == 'wav2vec':
+            feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+                "facebook/wav2vec2-base-960h"
+                # "m3hrdadfi/wav2vec2-base-100k-voxpopuli-gtzan-music"
+            )
+            encoding = feature_extractor(waveform, sampling_rate=self.config['sample_rate'],
+                                         return_tensors="pt")
+            mel_spec = encoding['input_values'].squeeze()
+            # print(mel_spec.shape)
+        return mel_spec, target
 
     def read_file(self):
+        f = open('tag_categorize.json')
+        data = json.load(f)
+        categorize = {}
+        for k, v in data.items():
+            for i in v[1:-1].split(', '):
+                categorize[i] = k
         tracks = {}
+        total_tags = []
         with open(self.tag_file) as fp:
             reader = csv.reader(fp, delimiter='\t')
             next(reader, None)  # skip header
@@ -85,33 +99,29 @@ class MyDataset(torch.utils.data.Dataset):
                 if not os.path.exists(os.path.join(self.npy_root, row[3].replace('.mp3', '.npy'))):
                     continue
                 track_id = row[3].replace('.mp3', '.npy')
-                tracks[track_id] = row[5:]
+                tags = []
+                for tag in row[5:]:
+                    tags.append(categorize[tag.split('---')[-1]])
+                tracks[track_id] = tags
+                total_tags += tags
+        print("Distribution of tags:", collections.Counter(total_tags))
+        plt.hist(total_tags)
+        plt.savefig('dist.png')
         return tracks
 
     def prepare_data(self):
-        tracks = self.read_file()
-        whole_filenames = []
-        for id in tracks:
-            whole_filenames.append(os.path.join(self.npy_root, id))
-        train_size = int(len(whole_filenames) * 0.7)
-        val_size = int(len(whole_filenames) * 0.2)
+        tracks_dict = self.read_file()
+        whole_filenames = sorted(glob.glob(os.path.join(self.npy_root, "*/*.npy")))
+        train_size = int(len(whole_filenames) * 0.8)
+        # val_size = int(len(whole_filenames) * 0.95)
         filenames = []
         random.shuffle(whole_filenames)
-        if self.type == 'train':
+        if self.data_type == 'train':
             filenames = whole_filenames[:train_size]
-        if self.type == 'valid':
-            filenames = whole_filenames[train_size:(train_size+val_size)]
-        if self.type == 'test':
-            filenames = whole_filenames[(train_size+val_size):]
+        if self.data_type == 'valid':
+            filenames = whole_filenames[train_size:]
         for filename in tqdm(filenames):
             waveform = np.load(filename)
-            mel = librosa.feature.melspectrogram(y=waveform,
-                                                 sr=self.config['sample_rate'],
-                                                 n_fft=self.config['n_fft'],
-                                                 hop_length=self.config['hop_length'],
-                                                 n_mels=self.config['n_mels'],
-                                                 fmin=self.config['fmin'],
-                                                 fmax=self.config['fmax'])
-            self.data.append(librosa.power_to_db(mel, ref=np.max))
+            self.data.append(waveform)
             id = os.path.join(filename.split('/')[-2], filename.split('/')[-1])
-            self.labels.append(np.sum(self.mlb.transform(tracks[id]), axis=0))
+            self.labels.append(np.sum(self.mlb.transform(tracks_dict[id]), axis=0))
