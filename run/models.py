@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-from attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
+from run.attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
 from transformers import AutoConfig
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2PreTrainedModel,
@@ -294,6 +294,71 @@ class FCN(nn.Module):
 
         return x
 
+class ShortChunkCNN_Res(nn.Module):
+    '''
+    Short-chunk CNN architecture with residual connections.
+    '''
+    def __init__(self, n_class=50, config=None):
+        super(ShortChunkCNN_Res, self).__init__()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                  n_fft=config['n_fft'],
+                                                  f_min=config['fmin'],
+                                                  f_max=config['fmax'],
+                                                  n_mels=config['n_mels'])
+
+        # Spectrogram
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
+        self.spec_bn = nn.BatchNorm2d(1)
+
+        # CNN
+        n_channels = 128
+        self.layer1 = Res_2d(1, n_channels, stride=2)
+        self.layer2 = Res_2d(n_channels, n_channels, stride=2)
+        self.layer3 = Res_2d(n_channels, n_channels*2, stride=2)
+        self.layer4 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer5 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer6 = Res_2d(n_channels*2, n_channels*2, stride=2)
+        self.layer7 = Res_2d(n_channels*2, n_channels*4, stride=2)
+
+        # Dense
+        self.dense1 = nn.Linear(n_channels*4, n_channels*4)
+        self.bn = nn.BatchNorm1d(n_channels*4)
+        self.dense2 = nn.Linear(n_channels*4, n_class)
+        self.dropout = nn.Dropout(0.5)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        # Spectrogram
+        x = self.spec(x)
+        x = self.to_db(x)
+        x = x.unsqueeze(1)
+        x = self.spec_bn(x)
+
+        # CNN
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.layer5(x)
+        x = self.layer6(x)
+        x = self.layer7(x)
+        x = x.squeeze(2)
+
+        # Global Max Pooling
+        if x.size(-1) != 1:
+            x = nn.MaxPool1d(x.size(-1))(x)
+        x = x.squeeze(2)
+
+        # Dense
+        x = self.dense1(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.dense2(x)
+        x = nn.Sigmoid()(x)
+
+        return x
+
 class SampleCNN(nn.Module):
     def __init__(self, n_classes, config=None):
         super(SampleCNN, self).__init__()
@@ -363,8 +428,6 @@ class SampleCNN(nn.Module):
         out = self.fc2(out)
         logit = self.activation(out)
         return logit
-
-
 
 class CNNSA(nn.Module):
     '''
@@ -467,6 +530,10 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        # self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+        #     "facebook/wav2vec2-base-960h"
+        #     # "m3hrdadfi/wav2vec2-base-100k-voxpopuli-gtzan-music"
+        # )
         self.wav2vec2 = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h")
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.final_dropout)
@@ -476,6 +543,9 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
         self.wav2vec2.feature_extractor._freeze_parameters()
 
     def forward(self, input_values):
+        # encoding = self.feature_extractor(input_values, sampling_rate=self.config['sample_rate'],
+        #                               return_tensors="pt")
+        # mel_spec = encoding['input_values'].squeeze()
         outputs = self.wav2vec2(input_values)
         hidden_states = outputs[0]
         x = torch.mean(hidden_states, dim=1)
@@ -486,20 +556,67 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
         x = self.out_proj(x)
         logits = nn.Sigmoid()(x)
         return logits
-class Baseline1(nn.Module):
-    '''
-    Popularity baseline always predicts the most frequent tag
-    among tracks in the training set.
-    '''
-    def __init__(self, dist_tags, tags):
-        super(Baseline1, self).__init__()
-        total = 0
-        for v in dist_tags.values():
-            total += v
-        self.probs = []
-        for t in tags:
-            self.probs.append(dist_tags[t]/total)
-        self.dense = nn.Linear(2, 2)
+
+class Baseline2(nn.Module):
+    def __init__(self, n_class):
+        super(Baseline2, self).__init__()
+
+        # init bn
+        self.bn_init = nn.BatchNorm2d(1)
+
+        # layer 1
+        self.conv_1 = nn.Conv2d(1, 64, 3, padding=1)
+        self.bn_1 = nn.BatchNorm2d(64)
+        self.mp_1 = nn.MaxPool2d((2, 4))
+
+        # layer 2
+        self.conv_2 = nn.Conv2d(64, 128, 3, padding=1)
+        self.bn_2 = nn.BatchNorm2d(128)
+        self.mp_2 = nn.MaxPool2d((2, 4))
+
+        # layer 3
+        self.conv_3 = nn.Conv2d(128, 128, 3, padding=1)
+        self.bn_3 = nn.BatchNorm2d(128)
+        self.mp_3 = nn.MaxPool2d((2, 4))
+
+        # layer 4
+        self.conv_4 = nn.Conv2d(128, 128, 3, padding=1)
+        self.bn_4 = nn.BatchNorm2d(128)
+        self.mp_4 = nn.MaxPool2d((3, 5))
+
+        # layer 5
+        self.conv_5 = nn.Conv2d(128, 64, 3, padding=1)
+        self.bn_5 = nn.BatchNorm2d(64)
+        self.mp_5 = nn.MaxPool2d((4, 4))
+
+        # classifier
+        self.dense = nn.Linear(64, n_class)
+        self.dropout = nn.Dropout(0.5)
+
     def forward(self, x):
-        x = self.dense(x)
-        return self.probs
+        x = x.unsqueeze(1)
+
+        # init bn
+        x = self.bn_init(x)
+
+        # layer 1
+        x = self.mp_1(nn.ELU()(self.bn_1(self.conv_1(x))))
+
+        # layer 2
+        x = self.mp_2(nn.ELU()(self.bn_2(self.conv_2(x))))
+
+        # layer 3
+        x = self.mp_3(nn.ELU()(self.bn_3(self.conv_3(x))))
+
+        # layer 4
+        x = self.mp_4(nn.ELU()(self.bn_4(self.conv_4(x))))
+
+        # layer 5
+        x = self.mp_5(nn.ELU()(self.bn_5(self.conv_5(x))))
+
+        # classifier
+        x = x.view(x.size(0), -1)
+        x = self.dropout(x)
+        logit = nn.Sigmoid()(self.dense(x))
+
+        return logit

@@ -9,7 +9,7 @@ import csv
 parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--mp3_data_root', type=str, default='data/autotagging_moodtheme')
-parser.add_argument('--output_root', type=str, default='data/npy')
+parser.add_argument('--output_root', type=str, default='data/waveform')
 parser.add_argument('--tag_file', type=str, default='data/autotagging_moodtheme.tsv')
 parser.add_argument('--override', type=bool, default=False,
                     help="if set to True, override the npy files")
@@ -17,7 +17,6 @@ args = parser.parse_args()
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 np.random.seed(config['seed'])
-
 
 def get_waveform(mp3_filename, npy_filename, desired_length):
     x, _ = librosa.load(mp3_filename, sr=config['sample_rate'], mono=True)
@@ -40,7 +39,6 @@ def read_file():
             track_set.add(row[3].replace('.mp3', '.npy'))
     return track_set
 
-
 if __name__ == '__main__':
     # 1. create directories if not exists
     if not os.path.exists(args.output_root):
@@ -61,6 +59,7 @@ if __name__ == '__main__':
             continue
         npy_file_name = os.path.join(args.output_root, file_id)
         if os.path.isfile(npy_file_name) and not args.override:
+            print(npy_file_name)
             continue
         get_waveform(mp3_filename, npy_file_name, desired_length)
         # x, _ = librosa.load(file, sr=config['sample_rate'], mono=True)
