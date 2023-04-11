@@ -57,15 +57,15 @@ class MyDataset(torch.utils.data.Dataset):
         target = self.labels[index]
         if self.feature_extractor_type == 'raw':
             mel_spec = torch.Tensor(waveform)
-        if self.feature_extractor_type == 'melspec':
-            mel_spec = librosa.feature.melspectrogram(y=waveform,
-                                                 sr=self.config['sample_rate'],
-                                                 n_fft=self.config['n_fft'],
-                                                 hop_length=self.config['hop_length'],
-                                                 n_mels=self.config['n_mels'],
-                                                 fmin=self.config['fmin'],
-                                                 fmax=self.config['fmax'])
-            mel_spec = torch.Tensor(mel_spec)
+        # if self.feature_extractor_type == 'melspec':
+        #     mel_spec = librosa.feature.melspectrogram(y=waveform,
+        #                                          sr=self.config['sample_rate'],
+        #                                          n_fft=self.config['n_fft'],
+        #                                          hop_length=self.config['hop_length'],
+        #                                          n_mels=self.config['n_mels'],
+        #                                          fmin=self.config['fmin'],
+        #                                          fmax=self.config['fmax'])
+        #     mel_spec = torch.Tensor(mel_spec)
         if self.feature_extractor_type == 'ast':
             feature_extractor = AutoFeatureExtractor.from_pretrained(
                 "MIT/ast-finetuned-audioset-10-10-0.4593",
