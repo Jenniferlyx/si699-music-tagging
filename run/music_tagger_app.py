@@ -79,8 +79,8 @@ def get_tags(tag_file, isMap):
             total_tags += list(set(tags))
     return list(set(total_tags))
 
-def predict(mel, config):
-    TAGS = get_tags('data/autotagging_moodtheme.tsv', True)
+def predict(model_path, mel, config):
+    TAGS = get_tags('autotagging_moodtheme.tsv', True)
     # model_config = AutoConfig.from_pretrained(
     #     "facebook/wav2vec2-base-960h",
     #     num_labels=len(TAGS),
@@ -89,8 +89,14 @@ def predict(mel, config):
     #     finetuning_task="wav2vec2_clf",
     # )
     print(len(TAGS))
-    model = Musicnn(len(TAGS), config)
-    model.load_state_dict(torch.load('model/musicnn_best_score_0.0001_16.pt', map_location=torch.device('cpu')))
+    if ("samplecnn" in model_path):
+        model = SampleCNN(len(TAGS), config)
+    elif ("musicnn" in model_path):
+        model = Musicnn(len(TAGS), config)
+    elif ("fcn" in model_path):
+        model = FCN(len(TAGS), config)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    # model.load_state_dict(torch.load('model/musicnn_best_score_0.0001_16.pt', map_location=torch.device('cpu')))
     model.eval()
     mel = mel.unsqueeze(0)
     pred = model(mel)

@@ -248,8 +248,9 @@ class FCN(nn.Module):
         self.layer3 = Conv_2d(128, 128, kernel_size=3, stride=2, padding=2, pooling=2)
         self.layer4 = Conv_2d(128, 128, kernel_size=4, stride=2, padding=4, pooling=2)
         self.layer5 = Conv_2d(128, 64, kernel_size=3, stride=2, padding=3, pooling=2)
-
+        
         # Dense
+        self.dense1=nn.Linear(320,128)
         self.dense = nn.Linear(128, num_classes)
         self.dropout = nn.Dropout(0.5)
 
@@ -262,28 +263,33 @@ class FCN(nn.Module):
         x = self.spec_bn(x)
 
         # FCN
-        # print(x.shape)
+#         print(x.shape)
         x = self.layer1(x)
-        # print(x.shape)
+#         print(x.shape)
         x = self.layer2(x)
-        # print(x.shape)
+#         print(x.shape)
         x = self.layer3(x)
-        # print(x.shape)
+#         print(x.shape)
         x = self.layer4(x)
-        # print(x.shape)
+#         print(x.shape)
         x = self.layer5(x)
-        # print(x.shape)
+#         print(x.shape)
         # torch.Size([4, 1, 128, 10240])
         # torch.Size([4, 64, 32, 2560])
         # torch.Size([4, 128, 8, 640])
         # torch.Size([4, 128, 2, 160])
         # torch.Size([4, 128, 1, 40])
         # torch.Size([4, 64, 1, 10])
-
+#         print("-------dense layer-----")
         # Dense
         x = x.view(x.size(0), -1)
+#         print(x.shape)
         x = self.dropout(x)
+#         print(x.shape)
+        x=self.dense1(x)
+#         print(x.shape)
         x = self.dense(x)
+#         print(x.shape)
         x = nn.Sigmoid()(x)
 
         return x
@@ -352,7 +358,6 @@ class ShortChunkCNN_Res(nn.Module):
         x = nn.Sigmoid()(x)
 
         return x
-
 
 class SampleCNN(nn.Module):
     def __init__(self, n_classes, config=None):
