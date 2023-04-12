@@ -234,12 +234,12 @@ class FCN(nn.Module):
         super(FCN, self).__init__()
 
         # Spectrogram
-        # self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
-        #                                                     n_fft=config['n_fft'],
-        #                                                     f_min=config['fmin'],
-        #                                                     f_max=config['fmax'],
-        #                                                     n_mels=config['n_mels'])
-        # self.to_db = torchaudio.transforms.AmplitudeToDB()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                            n_fft=config['n_fft'],
+                                                            f_min=config['fmin'],
+                                                            f_max=config['fmax'],
+                                                            n_mels=config['n_mels'])
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # FCN
@@ -257,8 +257,8 @@ class FCN(nn.Module):
     def forward(self, x):
         # Spectrogram
         # print(x.shape)
-        # x = self.spec(x)
-        # x = self.to_db(x)
+        x = self.spec(x)
+        x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
