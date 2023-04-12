@@ -250,7 +250,7 @@ class FCN(nn.Module):
         self.layer5 = Conv_2d(128, 64, kernel_size=3, stride=2, padding=3, pooling=2)
         
         # Dense
-        self.dense1=nn.Linear(320,128)
+#         self.dense1=nn.Linear(320,128)
         self.dense = nn.Linear(128, num_classes)
         self.dropout = nn.Dropout(0.5)
 
@@ -286,7 +286,7 @@ class FCN(nn.Module):
 #         print(x.shape)
         x = self.dropout(x)
 #         print(x.shape)
-        x=self.dense1(x)
+#         x=self.dense1(x)
 #         print(x.shape)
         x = self.dense(x)
 #         print(x.shape)
