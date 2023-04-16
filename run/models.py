@@ -1,10 +1,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchaudio
-from run.attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
-from transformers import AutoConfig, BertModel
+from attention_modules import BertConfig, BertEncoder, BertPooler
+from transformers import BertModel
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2PreTrainedModel,
     Wav2Vec2Model
