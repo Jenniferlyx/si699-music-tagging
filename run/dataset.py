@@ -80,7 +80,7 @@ class MyDataset(torch.utils.data.Dataset):
         for filename in tqdm(filenames):
             file_id = os.path.join(filename.split('/')[-2], filename.split('/')[-1].split('.')[0])
             if file_id not in self.tracks_dict:
-                # check non-exit file
+                # check non-exist file
                 print(file_id)
                 continue
             self.data.append(np.load(filename))

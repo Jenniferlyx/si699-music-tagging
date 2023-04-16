@@ -264,7 +264,6 @@ class FCN(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
         x = self.layer5(x)
-
         # Dense
         x = x.view(x.size(0), -1)
         x = self.dropout(x)
