@@ -62,7 +62,3 @@ if __name__ == '__main__':
             print(npy_file_name)
             continue
         get_waveform(mp3_filename, npy_file_name, desired_length)
-        # x, _ = librosa.load(file, sr=config['sample_rate'], mono=True)
-        # with open(npy_file, 'wb') as f:
-        #     np.save(f, x)
-
