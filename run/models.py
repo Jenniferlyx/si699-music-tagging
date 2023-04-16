@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from run.attention_modules import BertConfig, BertEncoder, BertEmbeddings, BertPooler, PositionalEncoding
-from transformers import AutoConfig
+from transformers import AutoConfig, BertModel
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2PreTrainedModel,
     Wav2Vec2Model
@@ -102,12 +102,12 @@ class CRNN(nn.Module):
     '''
     def __init__(self, num_classes, config=None):
         super(CRNN, self).__init__()
-        # self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
-        #                                                  n_fft=config['n_fft'],
-        #                                                  f_min=config['fmin'],
-        #                                                  f_max=config['fmax'],
-        #                                                  n_mels=config['n_mels'])
-        # self.to_db = torchaudio.transforms.AmplitudeToDB()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                         n_fft=config['n_fft'],
+                                                         f_min=config['fmin'],
+                                                         f_max=config['fmax'],
+                                                         n_mels=config['n_mels'])
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # CNN
@@ -125,8 +125,8 @@ class CRNN(nn.Module):
 
     def forward(self, x):
         # Spectrogram
-        # x = self.spec(x)
-        # x = self.to_db(x)
+        x = self.spec(x)
+        x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
@@ -156,7 +156,6 @@ class Musicnn(nn.Module):
     This is the updated implementation of the original paper. Referred to the Musicnn code.
     https://github.com/jordipons/musicnn
     '''
-
     def __init__(self, num_classes, config=None):
         super(Musicnn, self).__init__()
         self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
@@ -232,7 +231,6 @@ class FCN(nn.Module):
     '''
     def __init__(self, num_classes, config=None):
         super(FCN, self).__init__()
-
         # Spectrogram
         self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
                                                             n_fft=config['n_fft'],
@@ -250,46 +248,26 @@ class FCN(nn.Module):
         self.layer5 = Conv_2d(128, 64, kernel_size=3, stride=2, padding=3, pooling=2)
         
         # Dense
-#         self.dense1=nn.Linear(320,128)
         self.dense = nn.Linear(128, num_classes)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
         # Spectrogram
-        # print(x.shape)
         x = self.spec(x)
         x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
         # FCN
-#         print(x.shape)
         x = self.layer1(x)
-#         print(x.shape)
         x = self.layer2(x)
-#         print(x.shape)
         x = self.layer3(x)
-#         print(x.shape)
         x = self.layer4(x)
-#         print(x.shape)
         x = self.layer5(x)
-#         print(x.shape)
-        # torch.Size([4, 1, 128, 10240])
-        # torch.Size([4, 64, 32, 2560])
-        # torch.Size([4, 128, 8, 640])
-        # torch.Size([4, 128, 2, 160])
-        # torch.Size([4, 128, 1, 40])
-        # torch.Size([4, 64, 1, 10])
-#         print("-------dense layer-----")
         # Dense
         x = x.view(x.size(0), -1)
-#         print(x.shape)
         x = self.dropout(x)
-#         print(x.shape)
-#         x=self.dense1(x)
-#         print(x.shape)
         x = self.dense(x)
-#         print(x.shape)
         x = nn.Sigmoid()(x)
 
         return x
@@ -298,7 +276,7 @@ class ShortChunkCNN_Res(nn.Module):
     '''
     Short-chunk CNN architecture with residual connections.
     '''
-    def __init__(self, n_class=50, config=None):
+    def __init__(self, n_class, config=None):
         super(ShortChunkCNN_Res, self).__init__()
         self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
                                                   n_fft=config['n_fft'],
@@ -360,73 +338,48 @@ class ShortChunkCNN_Res(nn.Module):
         return x
 
 class SampleCNN(nn.Module):
+    '''
+    Lee et al. 2017
+    Sample-level deep convolutional neural networks for music auto-tagging using raw waveforms.
+    Sample-level CNN.
+    '''
     def __init__(self, n_classes, config=None):
         super(SampleCNN, self).__init__()
-        # self.to_db = torchaudio.transforms.AmplitudeToDB()
-        # 128 x 10240
-        # self.conv1 = nn.Sequential(
-        #     nn.Conv1d(1, 128, kernel_size=3, stride=3, padding=1),
-        #     nn.BatchNorm1d(128),
-        #     nn.ReLU())
         self.conv1 = Conv_1d(1, 128, kernel_size=3, stride=3, padding=0, pooling=1)
-        # 128 x 5120
         self.conv2 = Conv_1d(128, 128)
-        # 128 x 2560
         self.conv3 = Conv_1d(128, 128)
-        # 128 x 1280
         self.conv4 = Conv_1d(128, 256)
-        # 256 x 640
         self.conv5 = Conv_1d(256, 256)
-        # 256 x 320
         self.conv6 = Conv_1d(256, 256)
-        # 256 x 160
         self.conv7 = Conv_1d(256, 256)
-        # 256 x 40
         self.conv8 = Conv_1d(256, 256)
-        # 256 x 10
         self.conv9 = Conv_1d(256, 256)
-        # 256 x 3
         self.conv10 = Conv_1d(256, 512)
-        # 512 x 1
         self.conv11 = Conv_1d(512, 512, kernel_size=1, stride=1, padding=0, pooling=1)
-        # 512 x 1
         self.dropout = nn.Dropout(0.5)
         self.fc1 = nn.Linear(1536, 512)
         self.fc2 = nn.Linear(512, n_classes)
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
-        # print(x.shape)
-        # x = self.to_db(x)
         x = x.unsqueeze(1)
         out = self.conv1(x)
-        # print(out.shape)
         out = self.conv2(out)
-        # print(out.shape)
         out = self.conv3(out)
-        # print(out.shape)
         out = self.conv4(out)
-        # print(out.shape)
         out = self.conv5(out)
-        # print(out.shape)
         out = self.conv6(out)
-        # print(out.shape)
         out = self.conv7(out)
-        # print(out.shape)
         out = self.conv8(out)
-        # print(out.shape)
         out = self.conv9(out)
-        # print(out.shape)
         out = self.conv10(out)
-        # print(out.shape)
         out = self.conv11(out)
-        # print(out.shape)
         out = out.view(x.shape[0], out.size(1) * out.size(2))
-        # print(out.shape)
         out = self.dropout(out)
         out = self.fc1(out)
         out = self.fc2(out)
         logit = self.activation(out)
+
         return logit
 
 class CNNSA(nn.Module):
@@ -435,10 +388,16 @@ class CNNSA(nn.Module):
     Toward interpretable music tagging with self-attention.
     Feature extraction with CNN + temporal summary with Transformer encoder.
     '''
-
-    def __init__(self, n_class=50, config=None):
+    def __init__(self, n_class, config=None):
         super(CNNSA, self).__init__()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                  n_fft=config['n_fft'],
+                                                  f_min=config['fmin'],
+                                                  f_max=config['fmax'],
+                                                  n_mels=config['n_mels'])
 
+        # Spectrogram
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
         self.spec_bn = nn.BatchNorm2d(1)
 
         # CNN
@@ -484,6 +443,8 @@ class CNNSA(nn.Module):
 
     def forward(self, x):
         # Spectrogram
+        x = self.spec(x)
+        x = self.to_db(x)
         x = x.unsqueeze(1)
         x = self.spec_bn(x)
 
@@ -513,27 +474,10 @@ class CNNSA(nn.Module):
 
         return x
 
-# class ASTClassifier(nn.Module):
-#     def __init__(self, n_class=50, config=None):
-#         super(ASTClassifier, self).__init__()
-#         self.model = ASTForAudioClassification.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
-#         self.dense = nn.Linear(527, n_class)
-#     def forward(self, x):
-#         x = self.model(x)
-#         # Dense
-#         logits = x.logits
-#         logits = self.dense(logits)
-#         logits = nn.Sigmoid()(logits)
-#         return logits
-
 class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        # self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-        #     "facebook/wav2vec2-base-960h"
-        #     # "m3hrdadfi/wav2vec2-base-100k-voxpopuli-gtzan-music"
-        # )
         self.wav2vec2 = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h")
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.final_dropout)
@@ -543,9 +487,6 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
         self.wav2vec2.feature_extractor._freeze_parameters()
 
     def forward(self, input_values):
-        # encoding = self.feature_extractor(input_values, sampling_rate=self.config['sample_rate'],
-        #                               return_tensors="pt")
-        # mel_spec = encoding['input_values'].squeeze()
         outputs = self.wav2vec2(input_values)
         hidden_states = outputs[0]
         x = torch.mean(hidden_states, dim=1)
@@ -556,11 +497,101 @@ class Wav2Vec2ForSpeechClassification(Wav2Vec2PreTrainedModel):
         x = self.out_proj(x)
         logits = nn.Sigmoid()(x)
         return logits
+    
+class MusicnnwithTitle(nn.Module):
+    def __init__(self, num_classes, config=None):
+        super(Musicnn, self).__init__()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                  n_fft=config['n_fft'],
+                                                  f_min=config['fmin'],
+                                                  f_max=config['fmax'],
+                                                  n_mels=config['n_mels'])
+
+        # Spectrogram
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
+        self.spec_bn = nn.BatchNorm2d(1)
+
+        # Pons front-end
+        m1 = Conv_V(1, 204, (int(0.7 * 96), 7))
+        m2 = Conv_V(1, 204, (int(0.4 * 96), 7))
+        m3 = Conv_H(1, 51, 129)
+        m4 = Conv_H(1, 51, 65)
+        m5 = Conv_H(1, 51, 33)
+        self.layers = nn.ModuleList([m1, m2, m3, m4, m5])
+
+        # Pons back-end
+        backend_channel = 512
+        self.layer1 = Conv_1d(561, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
+        self.layer2 = Conv_1d(backend_channel, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
+        self.layer3 = Conv_1d(backend_channel, backend_channel, kernel_size=7, stride=1, padding=3, pooling=1)
+
+        # Dense
+        dense_channel = 500
+        self.dense1 = nn.Linear((561 + (backend_channel * 3)) * 2, dense_channel)
+        self.bn = nn.BatchNorm1d(dense_channel)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+        self.dense2 = nn.Linear(dense_channel, num_classes)
+        
+        # Bert
+        self.bert = BertModel.from_pretrained('bert-base-uncased', return_dict=True)
+        self.dense3 = nn.Linear(self.bert.config.hidden_size, 256)
+        self.dense4 = nn.Linear(256, num_classes)
+        
+        self.dense5 = nn.Linear(2*num_classes, num_classes)
+        
+
+    def forward(self, x, input_ids=None, attention_mask=None):
+        # Spectrogram
+        x = self.spec(x)
+        x = self.to_db(x)
+        x = x.unsqueeze(1)
+        x = self.spec_bn(x)
+
+        # Pons front-end
+        out = []
+        for layer in self.layers:
+            out.append(layer(x))
+        out = torch.cat(out, dim=1)
+
+        # Pons back-end
+        length = out.size(2)
+        res1 = self.layer1(out)
+        res2 = self.layer2(res1) + res1
+        res3 = self.layer3(res2) + res2
+        out = torch.cat([out, res1, res2, res3], 1)
+
+        mp = nn.MaxPool1d(length)(out)
+        avgp = nn.AvgPool1d(length)(out)
+
+        out = torch.cat([mp, avgp], dim=1)
+        out = out.squeeze(2)
+
+        out = self.relu(self.bn(self.dense1(out)))
+        out = self.dropout(out)
+        out = self.dense2(out)
+        
+        out_title = self.bert(input_ids, attention_mask=attention_mask)
+        out_title = self.dense3(out_title.pooler_output)
+        out_title = self.dropout(out_title)
+        out_title = self.dense4(out_title)
+        
+        out = torch.cat((out_title, out), dim=1)
+        out = self.dense5(out)
+        out = nn.Sigmoid()(out)
+        return out
 
 class Baseline2(nn.Module):
-    def __init__(self, n_class):
+    def __init__(self, n_class, config=None):
         super(Baseline2, self).__init__()
+        self.spec = torchaudio.transforms.MelSpectrogram(sample_rate=config['sample_rate'],
+                                                  n_fft=config['n_fft'],
+                                                  f_min=config['fmin'],
+                                                  f_max=config['fmax'],
+                                                  n_mels=config['n_mels'])
 
+        # Spectrogram
+        self.to_db = torchaudio.transforms.AmplitudeToDB()
         # init bn
         self.bn_init = nn.BatchNorm2d(1)
 
@@ -594,6 +625,8 @@ class Baseline2(nn.Module):
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
+        x = self.spec(x)
+        x = self.to_db(x)
         x = x.unsqueeze(1)
 
         # init bn
@@ -618,5 +651,4 @@ class Baseline2(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.dropout(x)
         logit = nn.Sigmoid()(self.dense(x))
-
         return logit
