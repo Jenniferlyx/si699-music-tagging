@@ -74,6 +74,10 @@ def predict(model_path, mel, config):
         model = Musicnn(len(TAGS), config)
     elif ("fcn" in model_path):
         model = FCN(len(TAGS), config)
+    elif ("crnn" in model_path):
+        model = CRNN(len(TAGS), config)
+    elif ("cnnsa" in model_path):
+        model = CNNSA(len(TAGS), config)
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.eval()
     mel = mel.unsqueeze(0)
