@@ -9,6 +9,10 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Model
 )
 
+# Code snippet from Github repository
+# Repository: https://github.com/minzwon/sota-music-tagging-models
+# File: training/modules.py
+# Commit: 36aa13b
 
 class Conv_1d(nn.Module):
     def __init__(self, input_channels, output_channels, kernel_size=3, stride=1, padding=0, pooling=3):
@@ -92,6 +96,11 @@ class Res_2d(nn.Module):
         out = x + out
         out = self.relu(out)
         return out
+    
+# Code snippet from Github repository
+# Repository: https://github.com/minzwon/sota-music-tagging-models
+# File: training/models.py
+# Commit: 36aa13b
 
 class CRNN(nn.Module):
     '''
