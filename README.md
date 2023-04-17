@@ -18,9 +18,6 @@ conda update --all
 conda env export --no-builds > env.yml
 ```
 
-### Using pyvenv
-
-
 ## Prepare data
 
 ### Download dataset
