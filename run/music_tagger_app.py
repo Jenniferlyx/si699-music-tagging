@@ -7,13 +7,14 @@ import pandas as pd
 from models import *
 import librosa
 import csv
-torch.manual_seed(0)
-np.random.seed(0)
+
 feature_extractor_type = 'raw'
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
 def convert(filename):
+    torch.manual_seed(4)
+    np.random.seed(0)
     waveform, _ = librosa.load(filename, sr=config['sample_rate'], mono=True)
     desired_length = config['duration'] * config['sample_rate']
     if len(waveform) < desired_length:
@@ -67,6 +68,8 @@ def get_tags(tag_file, isMap):
     return list(set(total_tags))
 
 def predict(model_path, mel, config):
+    torch.manual_seed(4)
+    np.random.seed(0)
     TAGS = get_tags('autotagging_moodtheme.tsv', True)
     if ("samplecnn" in model_path):
         model = SampleCNN(len(TAGS), config)
