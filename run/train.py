@@ -41,6 +41,7 @@ parser.add_argument('--num_epochs', type=int, default=5)
 parser.add_argument('--model', type=str, default='samplecnn')
 parser.add_argument('--transform', type=str, default='raw')
 parser.add_argument('--is_map', type=bool, default=True)
+parser.add_argument('--is_title', type=bool, default=False)
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Run on:", device)
@@ -49,7 +50,7 @@ with open('config.yaml', 'r') as f:
 torch.manual_seed(config['seed'])
 
 
-def train(model, epoch, criterion, optimizer, train_loader, is_title=False):
+def train(model, epoch, criterion, optimizer, train_loader):
     losses = []
     ground_truth = []
     prediction = []
@@ -57,7 +58,7 @@ def train(model, epoch, criterion, optimizer, train_loader, is_title=False):
     for waveform, input_ids, attention_mask, label in tqdm(train_loader):
         waveform, label = waveform.to(device), label.to(device)
         input_ids, attention_mask = input_ids.to(device), attention_mask.to(device)
-        if is_title:
+        if args.is_title:
             output = model(waveform, input_ids, attention_mask)
         else:
             output = model(waveform)
@@ -72,7 +73,7 @@ def train(model, epoch, criterion, optimizer, train_loader, is_title=False):
 
 
 @torch.no_grad()
-def validate(model, epoch, criterion, val_loader, is_title=False):
+def validate(model, epoch, criterion, val_loader):
     losses = []
     ground_truth = []
     prediction = []
@@ -80,7 +81,7 @@ def validate(model, epoch, criterion, val_loader, is_title=False):
     for waveform, input_ids, attention_mask, label in tqdm(val_loader):
         waveform, label = waveform.to(device), label.to(device)
         input_ids, attention_mask = input_ids.to(device), attention_mask.to(device)
-        if is_title:
+        if args.is_title:
             output = model(waveform, input_ids, attention_mask)
         else:
             output = model(waveform)
@@ -158,8 +159,6 @@ def get_model(tags):
             finetuning_task="wav2vec2_clf",
         )
         model = Wav2Vec2ForSpeechClassification(model_config).to(device)
-    else:
-        model = SampleCNN(n_classes, config).to(device)
     return model
 
 
