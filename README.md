@@ -18,6 +18,11 @@ conda update --all
 conda env export --no-builds > env.yml
 ```
 
+### Using pip
+```
+pip install -r requirements.txt
+```
+
 ## Prepare data
 
 ### Download dataset
