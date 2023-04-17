@@ -60,3 +60,6 @@ The script will create a tensorboard monitor under `runs`. To activate tensorboa
 ```
 python ${PATH_TO_TENSOrBOARD_PACKAGE}/tensorboard/main.py --logdir=runs
 ```
+
+## Reference
+[1] Bogdanov, D., Won M., Tovstogan P., Porter A., & Serra X. (2019). The MTG-Jamendo Dataset for Automatic Music Tagging. Machine Learning for Music Discovery Workshop, International Conference on Machine Learning (ICML 2019).
