@@ -34,17 +34,21 @@ to download `.mp3` files from `raw_30s` to directories under `data/raw_data`.
 ### Convert `.mp3` file to `.npy`
 
 ```
-python preprocessing/convert_npy.py --data_path data/raw_data \
-                                    --output_root data/npy \
+python preprocessing/convert_npy.py --data_path data/autotagging_moodtheme \
+                                    --output_root data/waveform \
                                     --override True
 ```
-to convert audio files into `.npy` files under the directory `data/npy`.
+to convert audio files into `.npy` files under the directory `data/waveform`.
 
 ## Train
 
 ```
-python run/train.py --tag_file data/autotagging_top50tags.tsv \
-                    --npy_root data/npy \
+python run/train.py --tag_file data/autotagging_moodtheme.tsv \
+                    --npy_root data/waveform \
+                    --model samplecnn \
+                    --transform raw \
+                    --is_map True \
+                    --is_title False \
                     --batch_size 4 \
                     --learning_rate 1e-4 \
                     --num_epochs 10 \
