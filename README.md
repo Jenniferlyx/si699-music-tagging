@@ -29,7 +29,7 @@ The codes of downloading the dataset from `mtg-jamendo-dataset` is modified from
 ```
 bash download_audio.sh ${NUM_FOLDERS_TO_DOWNLOAD}
 ```
-to download `.mp3` files from `raw_30s` to directories under `data/raw_data`.
+to download `.mp3` files from `autotagging_moodtheme` to directories under `data/autotagging_moodtheme`.
 
 ### Convert `.mp3` file to `.npy`
 
