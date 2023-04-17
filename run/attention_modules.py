@@ -1,5 +1,9 @@
 # coding: utf-8
-# Code adopted from https://github.com/huggingface/pytorch-pretrained-BERT
+# Code snippet from Github repository
+# Repository: https://github.com/minzwon/sota-music-tagging-models
+# File: training/attention_modules.py
+# Commit: 36aa13b
+# Originally adopted from https://github.com/huggingface/pytorch-pretrained-BERT
 
 import math
 import copy
